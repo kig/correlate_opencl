@@ -1,0 +1,4 @@
+An implementation of the algorithm used in http://bit.ly/a1xvZB for 
+comparing CPU and GPU performance in a memory read benchmark. 
+
+(And it was a good excuse to learn OpenCL.)
