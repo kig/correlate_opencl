@@ -1,4 +1,4 @@
-__kernel void memcpy (
+__kernel void memsum (
   __global float4 *dst,
   __global float4 *src,
   const int buf_size )

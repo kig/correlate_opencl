@@ -1,6 +1,6 @@
 /*
 
-g++ -O3 -lOpenCL -lm -o memcpy memcpy.cpp
+g++ -O3 -lOpenCL -lm -o memsum memsum.cpp
 
 */
 #include <stdlib.h>
@@ -49,8 +49,8 @@ void save_program_binary(cl_program program, const char *filename)
   writeFile(filename, (char*)bin, binsize);
 }
 
-#define KERNEL "memcpy"
-void memcpy_openCL( float *dst, float *src, int buf_size, bool useCPU )
+#define KERNEL "memsum"
+void memsum_openCL( float *dst, float *src, int buf_size, bool useCPU )
 {
   cl_platform_id platform;
   clGetPlatformIDs( 1, &platform, NULL );
@@ -85,7 +85,7 @@ void memcpy_openCL( float *dst, float *src, int buf_size, bool useCPU )
   cl_kernel kernel = clCreateKernel( program, KERNEL, NULL );
 
   cl_mem src_buf = clCreateBuffer( context, CL_MEM_READ_ONLY|CL_MEM_USE_HOST_PTR, buf_size*sizeof(cl_float4), (void*)src, NULL );
-  cl_mem dst_buf = clCreateBuffer( context, CL_MEM_READ_ONLY|CL_MEM_USE_HOST_PTR, buf_size*sizeof(cl_float4), (void*)dst, NULL );
+  cl_mem dst_buf = clCreateBuffer( context, CL_MEM_WRITE_ONLY, buf_size*sizeof(cl_float4), NULL, NULL );
 
   clSetKernelArg(kernel, 0, sizeof(dst_buf), (void*) &dst_buf);
   clSetKernelArg(kernel, 1, sizeof(src_buf), (void*) &src_buf);
@@ -129,20 +129,20 @@ int main () {
   float *dst2 = makeBuf(max_sz);
 
   // compile OpenCL kernels
-  memcpy_openCL(dst, src, 10, false);
-  memcpy_openCL(dst, src, 10, true);
+  memsum_openCL(dst, src, 10, false);
+  memsum_openCL(dst, src, 10, true);
 
   printf("in_sz\tcl_img\tcl_cpu\n");
 
   printf("%d", max_sz);
 
   t0 = dtime();
-  memcpy_openCL(dst, src, max_sz, false);
+  memsum_openCL(dst, src, max_sz, false);
   t1 = dtime();
   printf("\t%.4f", (t1-t0));
 
   t0 = dtime();
-  memcpy_openCL(dst2, src, max_sz, true);
+  memsum_openCL(dst2, src, max_sz, true);
   t1 = dtime();
   printf("\t%.4f", (t1-t0));
 
