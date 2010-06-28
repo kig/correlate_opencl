@@ -140,6 +140,37 @@ void correlate
 }
 
 
+void correlate_optimized
+(
+ float *correlation, int corr_size,
+ const float *basef, const float *maskf,
+ int sample_size)
+{
+  const vec4* base = (vec4*) basef;
+  const vec4* mask = (vec4*) maskf;
+  vec4* tmp = (vec4*) memalign(16, corr_size*corr_size*sizeof(vec4));
+  #pragma omp parallel for
+  for (int offset_y=0; offset_y < corr_size; offset_y++) {
+    for (int rows=0; rows < sample_size-offset_y; rows++) {
+      int mask_index = (offset_y + rows) * sample_size;
+      for (int offset_x=0; offset_x < corr_size; offset_x+=16) {
+        int corr_idx = offset_y*corr_size + offset_x;
+        int base_index = mask_index + offset_x;
+        int lidx = corr_size-offset_x > 16 ? 16 : corr_size-offset_x;
+        for (int columns=0; columns < sample_size-offset_x; columns++) {
+          for (int idx=0; idx<lidx; idx++) {
+            tmp[corr_idx+idx] += base[base_index+columns+idx] * mask[mask_index+columns+idx];
+          }
+        }
+      }
+    }
+  }
+  for (int i=0; i<corr_size*corr_size; i++) {
+    correlation[i] = tmp[i].sum();
+  }
+  free(tmp);
+}
+
 
 unsigned char *readFile (const char *filename, size_t *read_bytes)
 {
@@ -252,67 +283,49 @@ float* makeImage(int ssz, bool initialize)
 
 int main () {
   double t0, t1;
-  int csz = 250, ssz = 500;
+  int csz = 256, ssz = 512;
 
-  //size_t ilen, mlen;
-  //const float *base = (const float*)readFile("image", &ilen);
-  //const float *mask = (const float*)readFile("mask", &mlen);
-  //fprintf(stderr, "Loaded a %d byte image and %d byte mask\n", ilen, mlen);
-
-  const float *base_empty = makeImage(ssz, true);
-  const float *mask_empty = makeImage(ssz, true);
-  const float *base_empty_uninitialized = makeImage(ssz, false);
-  const float *mask_empty_uninitialized = makeImage(ssz, false);
+  size_t ilen, mlen;
+  const float *base = (const float*)readFile("image", &ilen);
+  const float *mask = (const float*)readFile("mask", &mlen);
+  fprintf(stderr, "Loaded a %d byte image and %d byte mask\n", ilen, mlen);
 
   float *corr = (float*)memalign(16, csz*csz*sizeof(float));
   float *corr2 = (float*)memalign(16, csz*csz*sizeof(float));
   float *corr3 = (float*)memalign(16, csz*csz*sizeof(float));
 
-  // compile OpenCL kernel
-  correlate_openCL(corr3, 10, base_empty, mask_empty, 20);
+  fprintf(stderr, "Achieved bandwidth in gigabytes per second\n");
+  printf("in_sz\tout_sz\tbw_used\tcl\tsse_opt\tsse\n");
 
-  printf("in_sz\tout_sz\tcl_un\tcl_0\tsse_un\tsse_0\tsca_un\tsca_0\n");
-
-  for (int isz=10000; isz<=250000; isz+=20000) {
+  for (int isz=262144; isz<=262144; isz+=20000) {
     int sz = sqrt(isz);
-    printf("%d\t%d", sz*sz, (sz/2)*(sz/2));
+    double gb = 1e-9 * (2*sz*0.75*sz*0.75*4*4 * sz*0.5 * sz*0.5 + sz*0.5*sz*0.5);
+    printf("%d\t%d\t%.2f", 2*(sz*sz)*16, (sz/2)*(sz/2)*4, gb);
 
     t0 = dtime();
-    correlate_openCL(corr3, sz/2, base_empty_uninitialized, mask_empty_uninitialized, sz);
+    correlate_openCL(corr3, sz/2, base, mask, sz);
     t1 = dtime();
-    printf("\t%.4f", (t1-t0));
+    printf("\t%.4f", gb/(t1-t0));
 
     t0 = dtime();
-    correlate_openCL(corr3, sz/2, base_empty, mask_empty, sz);
+    correlate_optimized(corr2, sz/2, base, mask, sz);
     t1 = dtime();
-    printf("\t%.4f", (t1-t0));
+    printf("\t%.4f", gb/(t1-t0));
 
     t0 = dtime();
-    correlate(corr2, sz/2, base_empty_uninitialized, mask_empty_uninitialized, sz);
+    correlate(corr, sz/2, base, mask, sz);
     t1 = dtime();
-    printf("\t%.4f", (t1-t0));
-
-    t0 = dtime();
-    correlate(corr2, sz/2, base_empty, mask_empty, sz);
-    t1 = dtime();
-    printf("\t%.4f", (t1-t0));
-
-    t0 = dtime();
-    correlate_scalar(corr, sz/2, base_empty_uninitialized, mask_empty_uninitialized, sz);
-    t1 = dtime();
-    printf("\t%.4f", (t1-t0));
-
-    t0 = dtime();
-    correlate_scalar(corr, sz/2, base_empty, mask_empty, sz);
-    t1 = dtime();
-    printf("\t%.4f", (t1-t0));
+    printf("\t%.4f", gb/(t1-t0));
 
     printf("\n");
 
     for (int i=0; i<(sz/2)*(sz/2); i++) {
       // less than one-thousandth error
-      if (fabs(corr2[i]-corr3[i]) > fabs(corr2[i]*0.001)) {
-        fprintf(stderr, "%d: %f is not %f\n", i, corr2[i], corr3[i]);
+      if (
+        fabs(corr[i]-corr2[i]) > fabs(corr[i]*0.001) ||
+        fabs(corr3[i]-corr2[i]) > fabs(corr2[i]*0.001)
+      ) {
+        fprintf(stderr, "%d: discrepancy sse %f sse_opt %f gpu %f\n", i, corr[i], corr2[i], corr3[i]);
         break;
       }
     }
