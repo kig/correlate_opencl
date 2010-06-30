@@ -1,0 +1,3 @@
+Achieved bandwidth in gigabytes per second
+in_sz	out_sz	bw_used	cl_gpu	gbld_t	cl_cpu	cbld_t	sse_o	sse
+8388608	262144	309.24	160.50	0.74	40.63	0.19	22.06	5.82
