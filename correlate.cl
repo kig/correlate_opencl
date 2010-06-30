@@ -1,20 +1,34 @@
 __kernel void correlate (
-  __global float *correlation,
+  __global float8 *correlation,
   const int corr_size,
-  const __global float4 *base,
-  const __global float4 *mask,
+  __constant float4 *base,
+  __constant float4 *mask,
   const int sample_size )
 {
-  uint gid = get_global_id(0);
-  uint offset_y = gid/corr_size;
-  uint offset_x = gid-(offset_y*corr_size);
-  float4 sum = (float4)(0.0f);
-  for (int rows=0; rows < sample_size-offset_y; rows++) {
-    int mask_index = (offset_y + rows) * sample_size;
-    int base_index = mask_index + offset_x;
-    for (int columns=0; columns < sample_size-offset_x; columns++) {
-      sum += base[base_index+columns] * mask[mask_index+columns];
+  float4 l_mask[32], l_base[32];
+  float8 sum = 0;
+  int gid = get_global_id(0);
+  int offset_y = gid*8 / corr_size;
+  int offset_x = gid*8 - (offset_y*corr_size);
+  for (int y=0; y < sample_size-offset_y; y++) {
+    int mask_idx = (offset_y+y)*(sample_size+32);
+    int base_idx = mask_idx + offset_x;
+    for (int x=0; x < sample_size-offset_x; x+=16) {
+      for (int i=0; i<32; i++) {
+        l_base[i] = base[base_idx+x+i];
+        l_mask[i] = mask[mask_idx+x+i];
+      }
+      for (int i=0; i<16; i++) {
+        sum.s0 += dot(l_base[i+0], l_mask[i+0]);
+        sum.s1 += dot(l_base[i+1], l_mask[i+1]);
+        sum.s2 += dot(l_base[i+2], l_mask[i+2]);
+        sum.s3 += dot(l_base[i+3], l_mask[i+3]);
+        sum.s4 += dot(l_base[i+4], l_mask[i+4]);
+        sum.s5 += dot(l_base[i+5], l_mask[i+5]);
+        sum.s6 += dot(l_base[i+6], l_mask[i+6]);
+        sum.s7 += dot(l_base[i+7], l_mask[i+7]);
+      }
     }
   }
-  correlation[gid] = sum.s0+sum.s1+sum.s2+sum.s3;
+  correlation[gid] = sum;
 }
