@@ -21,6 +21,12 @@ g++ -O3 -msse3 -mfpmath=sse -fopenmp -lOpenCL -lm -o corr corr.cpp
 
 using namespace std;
 
+double dtime() {
+  struct timeval t;
+  gettimeofday(&t, NULL);
+  return (double)t.tv_sec + (((double)t.tv_usec) / 1000000.0);
+}
+
 struct vec4
 {
   __m128 xmm;
@@ -144,25 +150,30 @@ void correlate
 void correlate_optimized
 (
  float *correlation, int corr_size,
- const float *basef, const float *maskf,
+ const float *obase, const float *omask,
  int sample_size)
 {
-  const vec4* base = (vec4*) basef;
-  const vec4* mask = (vec4*) maskf;
+  int stride = sample_size + 32;
+  vec4 *base = (vec4*)memalign(16, stride*sample_size*16);
+  vec4 *mask = (vec4*)memalign(16, stride*sample_size*16);
+  for (int y=0; y<sample_size; y++) {
+    memcpy(&base[y*stride], &obase[y*sample_size], sample_size*16);
+    memset(&base[y*stride+sample_size], 0, 32*16);
+    memcpy(&mask[y*stride], &omask[y*sample_size], sample_size*16);
+    memset(&mask[y*stride+sample_size], 0, 32*16);
+  }
   int block_size = 16;
-  vec4* tmp = (vec4*) memalign(16, corr_size*corr_size*sizeof(vec4));
-  memset(tmp, 0, corr_size*corr_size*sizeof(vec4));
+  vec4* tmp = (vec4*) memalign(16, (corr_size*corr_size+block_size)*sizeof(vec4));
+  memset(tmp, 0, (corr_size*corr_size+block_size)*sizeof(vec4));
   #pragma omp parallel for
   for (int offset_y=0; offset_y < corr_size; offset_y++) {
     for (int rows=0; rows < sample_size-offset_y; rows++) {
-      int mask_index = (offset_y + rows) * sample_size;
-      for (int offset_x=0; offset_x < corr_size; offset_x+=block_size) {
+      int mask_index = (offset_y + rows) * stride;
+      for (int offset_x=0; offset_x < corr_size; offset_x+=16) {
         int corr_idx = offset_y*corr_size + offset_x;
         int base_index = mask_index + offset_x;
-        int lidx = corr_size-offset_x > block_size ? block_size : corr_size-offset_x;
-        lidx = sample_size-offset_x > lidx ? lidx : sample_size-offset_x;
         for (int columns=0; columns < sample_size-offset_x; columns++) {
-          for (int idx=0; idx<lidx; idx++) {
+          for (int idx=0; idx<16; idx++) {
             tmp[corr_idx+idx] += base[base_index+columns+idx] * mask[mask_index+columns+idx];
           }
         }
@@ -238,7 +249,7 @@ void print_error(int err) {
   exit(1);
 }
 
-void correlate_openCL
+double correlate_openCL
 (
  float *correlation, int corr_size,
  const float *obase, const float *omask,
@@ -253,6 +264,8 @@ void correlate_openCL
     memcpy(&mask[y*stride*4], &omask[y*sample_size*4], sample_size*16);
     memset(&mask[y*stride*4+sample_size*4], 0, 32*16);
   }
+
+  double t0 = dtime();
 
   cl_platform_id platform;
   clGetPlatformIDs( 1, &platform, NULL );
@@ -284,14 +297,15 @@ void correlate_openCL
     print_error(err);
   }
 
+  double t1 = dtime();
+  double buildTime = t1-t0;
+
   cl_kernel kernel = clCreateKernel( program, "correlate", NULL );
 
-  // run 20 times because:
-  // - kernel compilation takes 0.5 seconds
-  // - running the kernel takes 1.5 seconds
-  // - cpu kernel run takes 30 seconds
-  // - hence make our kernel run take 30 seconds as well
-  for (int i=0; i<20; i++) {
+  // run 10 times because:
+  // - cpu kernel run takes 15 seconds
+  // - hence make our kernel run take 15 seconds as well
+  for (int i=0; i<10; i++) {
 
     cl_mem base_buf = clCreateBuffer(
       context,
@@ -368,13 +382,9 @@ void correlate_openCL
   clReleaseContext( context );
   free(base);
   free(mask);
+  return buildTime;
 }
 
-double dtime() {
-  struct timeval t;
-  gettimeofday(&t, NULL);
-  return (double)t.tv_sec + (((double)t.tv_usec) / 1000000.0);
-}
 
 float* makeImage(int ssz, bool initialize)
 {
@@ -387,12 +397,13 @@ float* makeImage(int ssz, bool initialize)
 
 
 int main () {
+  float *base, *mask;
   double t0, t1;
   int csz = 256, ssz = 512;
 
   size_t ilen, mlen;
-  const float *base = (const float*)readFile("image", &ilen);
-  const float *mask = (const float*)readFile("mask", &mlen);
+  base = (float*)readFile("image", &ilen);
+  mask = (float*)readFile("mask", &mlen);
   fprintf(stderr, "Loaded a %d byte image and %d byte mask\n", ilen, mlen);
 
   float *corr = (float*)memalign(16, csz*csz*sizeof(float));
@@ -400,7 +411,7 @@ int main () {
   float *corr3 = (float*)memalign(16, csz*csz*sizeof(float));
 
   fprintf(stderr, "Achieved bandwidth in gigabytes per second\n");
-  printf("in_sz\tout_sz\tbw_used\tcl\tsse_opt\tsse\n");
+  printf("in_sz\tout_sz\tbw_used\tcl\tcl_t\tbuild_t\tsse_o\tsse_o_t\tsse\tsse_t\n");
 
   for (int isz=262144; isz<=262144; isz+=20000) {
     int sz = sqrt(isz);
@@ -409,22 +420,22 @@ int main () {
     fflush(stdout);
 
     t0 = dtime();
-    // correlate_openCL runs the kernel 20 times
-    correlate_openCL(corr3, sz/2, base, mask, sz);
-    t1 = dtime();
-    printf("\t%.4f", 20*gb/(t1-t0));
+    // correlate_openCL runs the kernel 10 times
+    double buildTime = correlate_openCL(corr3, sz/2, base, mask, sz);
+    t1 = dtime()-buildTime;
+    printf("\t%.2f\t%.2f\t%.2f", 10*gb/(t1-t0), (t1-t0)/10, buildTime);
     fflush(stdout);
 
     t0 = dtime();
     correlate_optimized(corr2, sz/2, base, mask, sz);
     t1 = dtime();
-    printf("\t%.4f", gb/(t1-t0));
+    printf("\t%.2f\t%.2f", gb/(t1-t0), (t1-t0));
     fflush(stdout);
 
     t0 = dtime();
     correlate(corr, sz/2, base, mask, sz);
     t1 = dtime();
-    printf("\t%.4f", gb/(t1-t0));
+    printf("\t%.2f\t%.2f", gb/(t1-t0), (t1-t0));
     fflush(stdout);
 
     printf("\n");
