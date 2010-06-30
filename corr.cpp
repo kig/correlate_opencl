@@ -153,28 +153,34 @@ void correlate_optimized
  const float *obase, const float *omask,
  int sample_size)
 {
-  int stride = sample_size + 32;
-  vec4 *base = (vec4*)memalign(16, stride*sample_size*16);
-  vec4 *mask = (vec4*)memalign(16, stride*sample_size*16);
+  int stride = sample_size + 32 + (sample_size%32);
+  vec4 *base = (vec4*)memalign(16, stride*sample_size*sizeof(vec4));
+  vec4 *mask = (vec4*)memalign(16, stride*sample_size*sizeof(vec4));
   for (int y=0; y<sample_size; y++) {
-    memcpy(&base[y*stride], &obase[y*sample_size], sample_size*16);
-    memset(&base[y*stride+sample_size], 0, 32*16);
-    memcpy(&mask[y*stride], &omask[y*sample_size], sample_size*16);
-    memset(&mask[y*stride+sample_size], 0, 32*16);
+    memcpy(&base[y*stride], &obase[y*sample_size*4], sample_size*sizeof(vec4));
+    memset(&base[y*stride+sample_size], 0, (stride-sample_size)*sizeof(vec4));
+    memcpy(&mask[y*stride], &omask[y*sample_size*4], sample_size*sizeof(vec4));
+    memset(&mask[y*stride+sample_size], 0, (stride-sample_size)*sizeof(vec4));
   }
-  int block_size = 16;
-  vec4* tmp = (vec4*) memalign(16, (corr_size*corr_size+block_size)*sizeof(vec4));
-  memset(tmp, 0, (corr_size*corr_size+block_size)*sizeof(vec4));
+  vec4* tmp = (vec4*) memalign(16, (corr_size*corr_size+8)*sizeof(vec4));
+  memset(tmp, 0, (corr_size*corr_size+8)*sizeof(vec4));
   #pragma omp parallel for
   for (int offset_y=0; offset_y < corr_size; offset_y++) {
-    for (int rows=0; rows < sample_size-offset_y; rows++) {
-      int mask_index = (offset_y + rows) * stride;
-      for (int offset_x=0; offset_x < corr_size; offset_x+=16) {
+    for (int offset_x=0; offset_x < corr_size; offset_x+=8) {
+      for (int y=0; y < sample_size-offset_y; y++) {
         int corr_idx = offset_y*corr_size + offset_x;
+        int mask_index = (offset_y + y) * stride;
         int base_index = mask_index + offset_x;
-        for (int columns=0; columns < sample_size-offset_x; columns++) {
-          for (int idx=0; idx<16; idx++) {
-            tmp[corr_idx+idx] += base[base_index+columns+idx] * mask[mask_index+columns+idx];
+        for (int x=0; x < sample_size-offset_x; x+=16) {
+          for (int i=0; i<16; i++) {
+            tmp[corr_idx+0] += base[base_index+x+i+0] * mask[mask_index+x+i+0];
+            tmp[corr_idx+1] += base[base_index+x+i+1] * mask[mask_index+x+i+1];
+            tmp[corr_idx+2] += base[base_index+x+i+2] * mask[mask_index+x+i+2];
+            tmp[corr_idx+3] += base[base_index+x+i+3] * mask[mask_index+x+i+3];
+            tmp[corr_idx+4] += base[base_index+x+i+4] * mask[mask_index+x+i+4];
+            tmp[corr_idx+5] += base[base_index+x+i+5] * mask[mask_index+x+i+5];
+            tmp[corr_idx+6] += base[base_index+x+i+6] * mask[mask_index+x+i+6];
+            tmp[corr_idx+7] += base[base_index+x+i+7] * mask[mask_index+x+i+7];
           }
         }
       }
@@ -253,16 +259,16 @@ double correlate_openCL
 (
  float *correlation, int corr_size,
  const float *obase, const float *omask,
- int sample_size)
+ int sample_size, int repeats, bool useCPU)
 {
-  int stride = sample_size + 32;
+  int stride = sample_size + 32 + (sample_size%32);
   float *base = (float*)memalign(16, stride*sample_size*16);
   float *mask = (float*)memalign(16, stride*sample_size*16);
   for (int y=0; y<sample_size; y++) {
     memcpy(&base[y*stride*4], &obase[y*sample_size*4], sample_size*16);
-    memset(&base[y*stride*4+sample_size*4], 0, 32*16);
+    memset(&base[y*stride*4+sample_size*4], 0, (stride-sample_size)*16);
     memcpy(&mask[y*stride*4], &omask[y*sample_size*4], sample_size*16);
-    memset(&mask[y*stride*4+sample_size*4], 0, 32*16);
+    memset(&mask[y*stride*4+sample_size*4], 0, (stride-sample_size)*16);
   }
 
   double t0 = dtime();
@@ -271,7 +277,7 @@ double correlate_openCL
   clGetPlatformIDs( 1, &platform, NULL );
 
   cl_device_id device;
-  clGetDeviceIDs( platform, CL_DEVICE_TYPE_GPU, 1, &device, NULL );
+  clGetDeviceIDs( platform, useCPU ? CL_DEVICE_TYPE_CPU : CL_DEVICE_TYPE_GPU, 1, &device, NULL );
 
 //   cl_int support;
 //   clGetDeviceInfo( device, CL_DEVICE_IMAGE_SUPPORT, sizeof(cl_int), &support, NULL );
@@ -305,7 +311,7 @@ double correlate_openCL
   // run 10 times because:
   // - cpu kernel run takes 15 seconds
   // - hence make our kernel run take 15 seconds as well
-  for (int i=0; i<10; i++) {
+  for (int i=0; i<repeats; i++) {
 
     cl_mem base_buf = clCreateBuffer(
       context,
@@ -331,7 +337,7 @@ double correlate_openCL
     err = CL_SUCCESS;
     cl_mem corr_buf = clCreateBuffer(
       context,
-      CL_MEM_READ_WRITE,
+      CL_MEM_WRITE_ONLY,
       (corr_size*corr_size+8)*sizeof(float),
       NULL, &err );
     if (err != CL_SUCCESS)
@@ -339,24 +345,22 @@ double correlate_openCL
     err = CL_SUCCESS;
 
     err = clSetKernelArg(kernel, 0, sizeof(corr_buf), (void*) &corr_buf);
-    if (err != CL_SUCCESS)
-      printf("\narg 0 error: %d\n", err);
+    if (err != CL_SUCCESS) printf("\narg 0 error: %d\n", err);
     err = CL_SUCCESS;
     clSetKernelArg(kernel, 1, sizeof(corr_size), (void*) &corr_size);
-    if (err != CL_SUCCESS)
-      printf("\narg 1 error: %d\n", err);
+    if (err != CL_SUCCESS) printf("\narg 1 error: %d\n", err);
     err = CL_SUCCESS;
     clSetKernelArg(kernel, 2, sizeof(base_buf), (void*) &base_buf);
-    if (err != CL_SUCCESS)
-      printf("\narg 2 error: %d\n", err);
+    if (err != CL_SUCCESS) printf("\narg 2 error: %d\n", err);
     err = CL_SUCCESS;
     clSetKernelArg(kernel, 3, sizeof(mask_buf), (void*) &mask_buf);
-    if (err != CL_SUCCESS)
-      printf("\narg 3 error: %d\n", err);
+    if (err != CL_SUCCESS) printf("\narg 3 error: %d\n", err);
     err = CL_SUCCESS;
     clSetKernelArg(kernel, 4, sizeof(sample_size), (void*) &sample_size);
-    if (err != CL_SUCCESS)
-      printf("\narg 4 error: %d\n", err);
+    if (err != CL_SUCCESS) printf("\narg 4 error: %d\n", err);
+    err = CL_SUCCESS;
+    clSetKernelArg(kernel, 5, sizeof(stride), (void*) &stride);
+    if (err != CL_SUCCESS) printf("\narg 5 error: %d\n", err);
     err = CL_SUCCESS;
 
     size_t global_work_size[1] = {
@@ -391,27 +395,33 @@ float* makeImage(int ssz, bool initialize)
   float *img = (float*)memalign(16, ssz*ssz*4*sizeof(float));
   if (initialize)
     for (int i=0; i<ssz*ssz*4; i++)
-      img[i] = 0.0f;
+      img[i] = 0.000001 * i;
   return img;
 }
 
 
 int main () {
-  float *base, *mask;
   double t0, t1;
   int csz = 256, ssz = 512;
 
-  size_t ilen, mlen;
-  base = (float*)readFile("image", &ilen);
-  mask = (float*)readFile("mask", &mlen);
-  fprintf(stderr, "Loaded a %d byte image and %d byte mask\n", ilen, mlen);
+  float *base = makeImage(ssz, true);
+  float *mask = makeImage(ssz, true);
+  // reverse mask
+  float tmp;
+  int len = ssz*ssz*4;
+  for (int i=0; i<len/2; i++) {
+    tmp = mask[len-1-i];
+    mask[len-1-i] = mask[i];
+    mask[i] = tmp;
+  }
 
   float *corr = (float*)memalign(16, csz*csz*sizeof(float));
+  float *corr1 = (float*)memalign(16, csz*csz*sizeof(float));
   float *corr2 = (float*)memalign(16, csz*csz*sizeof(float));
   float *corr3 = (float*)memalign(16, csz*csz*sizeof(float));
 
   fprintf(stderr, "Achieved bandwidth in gigabytes per second\n");
-  printf("in_sz\tout_sz\tbw_used\tcl\tcl_t\tbuild_t\tsse_o\tsse_o_t\tsse\tsse_t\n");
+  printf("in_sz\tout_sz\tbw_used\tcl_g\tcl_g_t\tgbld_t\tsse_o\tsse_o_t\tsse\tsse_t\tcl_c\tcl_c_t\tcbld_t\n");
 
   for (int isz=262144; isz<=262144; isz+=20000) {
     int sz = sqrt(isz);
@@ -421,13 +431,13 @@ int main () {
 
     t0 = dtime();
     // correlate_openCL runs the kernel 10 times
-    double buildTime = correlate_openCL(corr3, sz/2, base, mask, sz);
+    double buildTime = correlate_openCL(corr3, sz/2, base, mask, sz, 1, false);
     t1 = dtime()-buildTime;
-    printf("\t%.2f\t%.2f\t%.2f", 10*gb/(t1-t0), (t1-t0)/10, buildTime);
+    printf("\t%.2f\t%.2f\t%.2f", 1*gb/(t1-t0), (t1-t0)/1, buildTime);
     fflush(stdout);
 
     t0 = dtime();
-    correlate_optimized(corr2, sz/2, base, mask, sz);
+    correlate_optimized(corr1, sz/2, base, mask, sz);
     t1 = dtime();
     printf("\t%.2f\t%.2f", gb/(t1-t0), (t1-t0));
     fflush(stdout);
@@ -438,15 +448,22 @@ int main () {
     printf("\t%.2f\t%.2f", gb/(t1-t0), (t1-t0));
     fflush(stdout);
 
+    t0 = dtime();
+    buildTime = correlate_openCL(corr2, sz/2, base, mask, sz, 1, true);
+    t1 = dtime()-buildTime;
+    printf("\t%.2f\t%.2f\t%.2f", gb/(t1-t0), (t1-t0), buildTime);
+    fflush(stdout);
+
     printf("\n");
 
     for (int i=0; i<(sz/2)*(sz/2); i++) {
       // less than one percent error
       if (
         fabs(corr[i]-corr2[i]) > fabs(corr[i]*0.01) ||
-        fabs(corr[i]-corr3[i]) > fabs(corr[i]*0.01)
+        fabs(corr[i]-corr3[i]) > fabs(corr[i]*0.01) ||
+        fabs(corr[i]-corr1[i]) > fabs(corr[i]*0.01)
       ) {
-        fprintf(stderr, "%d: discrepancy sse %f sse_opt %f cl %f\n", i, corr[i], corr2[i], corr3[i]);
+        fprintf(stderr, "%d: discrepancy sse %f sse_opt %f cl_cpu %f cl_gpu %f\n", i, corr[i], corr1[i], corr2[i], corr3[i]);
         break;
       }
     }

@@ -3,7 +3,8 @@ __kernel void correlate (
   const int corr_size,
   __constant float4 *base,
   __constant float4 *mask,
-  const int sample_size )
+  const int sample_size,
+  const int stride )
 {
   float4 l_mask[32], l_base[32];
   float8 sum = 0;
@@ -11,7 +12,7 @@ __kernel void correlate (
   int offset_y = gid*8 / corr_size;
   int offset_x = gid*8 - (offset_y*corr_size);
   for (int y=0; y < sample_size-offset_y; y++) {
-    int mask_idx = (offset_y+y)*(sample_size+32);
+    int mask_idx = (offset_y+y)*(stride);
     int base_idx = mask_idx + offset_x;
     for (int x=0; x < sample_size-offset_x; x+=16) {
       for (int i=0; i<32; i++) {
