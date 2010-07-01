@@ -11,9 +11,10 @@ __kernel void correlate (
   int gid = get_global_id(0);
   int offset_y = gid*8 / corr_size;
   int offset_x = gid*8 - (offset_y*corr_size);
-  for (int y=0; y < sample_size-offset_y; y++) {
-    int mask_idx = (offset_y+y)*(stride);
-    int base_idx = mask_idx + offset_x;
+  int y = get_global_id(1);
+  if (y < sample_size-offset_y) {
+    int mask_idx = y*stride;
+    int base_idx = (offset_y+y)*stride + offset_x;
     for (int x=0; x < sample_size-offset_x; x+=16) {
       for (int i=0; i<32; i++) {
         l_base[i] = base[base_idx+x+i];
@@ -30,6 +31,6 @@ __kernel void correlate (
         sum.s7 += dot(l_base[i+7], l_mask[i+7]);
       }
     }
+    correlation[gid] += sum;
   }
-  correlation[gid] = sum;
 }

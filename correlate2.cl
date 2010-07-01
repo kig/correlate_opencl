@@ -12,8 +12,8 @@ __kernel void correlate (
   int offset_y = gid*8 / corr_size;
   int offset_x = gid*8 - (offset_y*corr_size);
   for (int y=0; y < sample_size-offset_y; y++) {
-    int mask_idx = (offset_y+y)*(stride);
-    int base_idx = mask_idx + offset_x;
+    int mask_idx = y*stride;
+    int base_idx = (offset_y+y)*stride + offset_x;
     for (int x=0; x < sample_size-offset_x; x+=8) {
       for (int i=0; i<16; ++i) {
         l_base[i] = base[base_idx+x+i];

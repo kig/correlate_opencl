@@ -110,8 +110,8 @@ void correlate_scalar
       float sum = 0.0f;
       for (int rows=0; rows < sample_size-offset_y; rows++) {
         for (int columns=0; columns < sample_size-offset_x; columns++) {
-          int mi = 4*((offset_y + rows) * sample_size + columns);
-          int bi = mi + 4*offset_x;
+          int mi = 4*(rows * sample_size + columns);
+          int bi = 4*((offset_y + rows) * sample_size + columns + offset_x);
           sum +=
             base[bi] * mask[mi] +
             base[bi+1] * mask[mi+1] +
@@ -139,8 +139,8 @@ void correlate
     for (int offset_x=0; offset_x < corr_size; offset_x++) {
       vec4 sum = vec4(0.0);
       for (int rows=0; rows < sample_size-offset_y; rows++) {
-        int mask_index = (offset_y + rows) * sample_size;
-        int base_index = mask_index + offset_x;
+        int mask_index = rows * sample_size;
+        int base_index = (offset_y+rows) * sample_size + offset_x;
         for (int columns=0; columns < sample_size-offset_x; columns++) {
           sum += base[base_index+columns] * mask[mask_index+columns];
         }
@@ -174,8 +174,8 @@ void correlate_optimized
     for (int offset_x=0; offset_x < corr_stride; offset_x+=8) {
       for (int y=0; y < sample_size-offset_y; y++) {
         int corr_idx = offset_y*corr_stride + offset_x;
-        int mask_index = (offset_y + y) * stride;
-        int base_index = mask_index + offset_x;
+        int mask_index = y * stride;
+        int base_index = (offset_y+y) * stride + offset_x;
         for (int x=0; x < sample_size-offset_x; x+=16) {
           for (int i=0; i<16; i++) {
             tmp[corr_idx+0] += base[base_index+x+i+0] * mask[mask_index+x+i+0];
@@ -262,7 +262,9 @@ void print_error(int err) {
   exit(1);
 }
 
-double correlate_openCL
+struct build_t { double buildTime; double kernelTime; };
+
+struct build_t correlate_openCL
 (
  float *correlation, int corr_size,
  const float *obase, const float *omask,
@@ -280,6 +282,7 @@ double correlate_openCL
   }
 
   float *tmp = (float*)memalign(16, corr_stride*corr_stride*sizeof(cl_float));
+  memset(tmp, 0, corr_stride*corr_stride*sizeof(cl_float));
 
   double t0 = dtime();
 
@@ -320,7 +323,7 @@ double correlate_openCL
 
   cl_mem base_buf = clCreateBuffer(
     context,
-    CL_MEM_READ_ONLY|CL_MEM_USE_HOST_PTR,
+    CL_MEM_READ_ONLY|CL_MEM_COPY_HOST_PTR,
     stride*sample_size*sizeof(cl_float4),
     (void*)base, &err );
   if (err != CL_SUCCESS) {
@@ -331,7 +334,7 @@ double correlate_openCL
   err = CL_SUCCESS;
   cl_mem mask_buf = clCreateBuffer(
     context,
-    CL_MEM_READ_ONLY|CL_MEM_USE_HOST_PTR,
+    CL_MEM_READ_ONLY|CL_MEM_COPY_HOST_PTR,
     stride*sample_size*sizeof(cl_float4),
     (void*)mask, &err );
   if (err != CL_SUCCESS) {
@@ -342,9 +345,9 @@ double correlate_openCL
   err = CL_SUCCESS;
   cl_mem corr_buf = clCreateBuffer(
     context,
-    CL_MEM_WRITE_ONLY,
+    CL_MEM_READ_WRITE|CL_MEM_COPY_HOST_PTR,
     (corr_stride*corr_size+8)*sizeof(float),
-    NULL, &err );
+    (void*)tmp, &err );
   if (err != CL_SUCCESS)
     printf("\ncorr_buf error: %d\n", err);
   err = CL_SUCCESS;
@@ -368,13 +371,17 @@ double correlate_openCL
   if (err != CL_SUCCESS) printf("\narg 5 error: %d\n", err);
   err = CL_SUCCESS;
 
-  size_t global_work_size = corr_stride*corr_size/8;
-  err = clEnqueueNDRangeKernel( queue, kernel, 1, NULL, &global_work_size, NULL, 0, NULL, NULL);
+  t0 = dtime();
+  size_t global_work_size[2] = {
+    corr_stride*corr_size/8, sample_size
+  };
+  err = clEnqueueNDRangeKernel( queue, kernel, useCPU ? 1 : 2, NULL, global_work_size, NULL, 0, NULL, NULL);
   if (err != CL_SUCCESS) {
     printf("\nError running kernel\n");
     print_error(err);
   }
   clFinish(queue);
+  double kernelTime = dtime() - t0;
 
   clEnqueueReadBuffer(queue, corr_buf, CL_TRUE, 0, corr_stride*corr_size*sizeof(cl_float), (void*)tmp, NULL, NULL, NULL);
 
@@ -395,7 +402,10 @@ double correlate_openCL
   free(base);
   free(mask);
   free(tmp);
-  return buildTime;
+  build_t t;
+  t.buildTime = buildTime;
+  t.kernelTime = kernelTime;
+  return t;
 }
 
 
@@ -431,11 +441,10 @@ int main () {
   float *corr3 = (float*)memalign(16, csz*csz*sizeof(float));
 
   fprintf(stderr, "Achieved bandwidth in gigabytes per second\n");
-  printf("in_sz\tout_sz\tbw_used\tcl_gpu\tgbld_t\tcl_cpu\tcbld_t\tsse_o\tsse\n");
+  printf("in_sz\tout_sz\tbw_used\tcl_gpu\tkbw_gpu\tgbld_t\tcl_cpu\tkbw_cpu\tcbld_t\tsse_o\tsse\n");
 
 
   for (int isz=ssz*ssz; isz<=ssz*ssz; isz+=20000) {
-    double buildTime;
     int sz = sqrt(isz);
     double gb = 1e-9 * (2*sz*0.75*sz*0.75*4*4 * sz*0.5 * sz*0.5 + sz*0.5*sz*0.5);
     printf("%d\t%d\t%.2f", 2*(sz*sz)*16, (sz/2)*(sz/2)*4, gb);
@@ -445,20 +454,21 @@ int main () {
     // it take the same amount of time as the CPU impls.
     // This is kinda hacky though, a better benchmark would
     // be to run all versions over ten different images?
-    int repeats = 1;
+    int repeats = 4;
     double elapsed = 0.0;
+    build_t bt;
     for (int j=0; j<repeats; j++) {
       t0 = dtime();
-      buildTime = correlate_openCL(corr3, sz/2, base, mask, sz, repeats, false);
-      elapsed += dtime()-buildTime-t0;
+      bt = correlate_openCL(corr3, sz/2, base, mask, sz, repeats, false);
+      elapsed += dtime()-bt.buildTime-t0;
     }
-    printf("\t%.2f\t%.2f", repeats*gb/elapsed, buildTime);
+    printf("\t%.2f\t%.2f\t%.2f", repeats*gb/elapsed, gb/bt.kernelTime, bt.buildTime);
     fflush(stdout);
 
     t0 = dtime();
-    buildTime = correlate_openCL(corr2, sz/2, base, mask, sz, 1, true);
-    t1 = dtime()-buildTime;
-    printf("\t%.2f\t%.2f", gb/(t1-t0), buildTime);
+    bt = correlate_openCL(corr2, sz/2, base, mask, sz, 1, true);
+    t1 = dtime()-bt.buildTime;
+    printf("\t%.2f\t%.2f\t%.2f", gb/(t1-t0), gb/bt.kernelTime, bt.buildTime);
     fflush(stdout);
 
     t0 = dtime();
