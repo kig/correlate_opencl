@@ -14,10 +14,10 @@ __kernel void correlate (
   int y = get_global_id(1);
   if (y < sample_size-offset_y) {
     int mask_idx = y*stride;
-    int base_idx = (offset_y+y)*stride + offset_x;
+    int base_idx = y*stride;
     for (int x=0; x < sample_size-offset_x; x+=16) {
       for (int i=0; i<32; i++) {
-        l_base[i] = base[x+i];
+        l_base[i] = base[base_idx+x+i];
         l_mask[i] = mask[mask_idx+x+i];
       }
       for (int i=0; i<16; i++) {
