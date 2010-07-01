@@ -270,10 +270,10 @@ struct build_t correlate_openCL
  const float *obase, const float *omask,
  int sample_size, int repeats, bool useCPU)
 {
-  int stride = sample_size + 16 + align(sample_size, 16); // pad by 16, align rows on 128 bytes
+  int stride = sample_size + 24 + align(sample_size, 8); // pad by 24, align rows on 128 bytes
   int corr_stride = corr_size + align(corr_size, 8); // pad to divisible by 8
-  float *base = (float*)memalign(32, stride*sample_size*16);
-  float *mask = (float*)memalign(32, stride*sample_size*16);
+  float *base = (float*)memalign(16, stride*sample_size*16);
+  float *mask = (float*)memalign(16, stride*sample_size*16);
   for (int y=0; y<sample_size; y++) {
     memcpy(&base[y*stride*4], &obase[y*sample_size*4], sample_size*16);
     memset(&base[y*stride*4+sample_size*4], 0, (stride-sample_size)*16);
@@ -281,7 +281,7 @@ struct build_t correlate_openCL
     memset(&mask[y*stride*4+sample_size*4], 0, (stride-sample_size)*16);
   }
 
-  float *tmp = (float*)memalign(32, corr_stride*corr_size*sizeof(cl_float));
+  float *tmp = (float*)memalign(16, corr_stride*corr_size*sizeof(cl_float));
   memset(tmp, 0, corr_stride*corr_size*sizeof(cl_float));
 
   double t0 = dtime();
@@ -372,10 +372,13 @@ struct build_t correlate_openCL
   err = CL_SUCCESS;
 
   t0 = dtime();
-  size_t global_work_size[2] = {
-    corr_stride*corr_size/8, sample_size
-  };
-  err = clEnqueueNDRangeKernel( queue, kernel, useCPU ? 1 : 2, NULL, global_work_size, NULL, 0, NULL, NULL);
+  if (useCPU) {
+    size_t cpu_sz[1] = { corr_stride*corr_size/8 };
+    err = clEnqueueNDRangeKernel( queue, kernel, 1, NULL, cpu_sz, NULL, 0, NULL, NULL);
+  } else {
+    size_t gpu_sz[2] = { corr_size*corr_stride/8, sample_size };
+    err = clEnqueueNDRangeKernel( queue, kernel, 2, NULL, gpu_sz, NULL, 0, NULL, NULL);
+  }
   if (err != CL_SUCCESS) {
     printf("\nError running kernel\n");
     print_error(err);
