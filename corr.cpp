@@ -473,7 +473,7 @@ int main () {
     t1 = dtime()-bt.buildTime;
     printf("\t%.2f\t%.2f\t%.2f", gb/(t1-t0), gb/bt.kernelTime, bt.buildTime);
     fflush(stdout);
-
+/*
     t0 = dtime();
     correlate_optimized(corr1, sz/2, base, mask, sz);
     t1 = dtime();
@@ -485,15 +485,15 @@ int main () {
     t1 = dtime();
     printf("\t%.2f", gb/(t1-t0));
     fflush(stdout);
-
+*/
     printf("\n");
 
     for (int i=0; i<(sz/2)*(sz/2); i++) {
       // less than one percent error
       if (
-        fabs(corr[i]-corr2[i]) > fabs(corr[i]*0.01) ||
-        fabs(corr[i]-corr3[i]) > fabs(corr[i]*0.01) ||
-        fabs(corr[i]-corr1[i]) > fabs(corr[i]*0.01)
+//        fabs(corr[i]-corr2[i]) > fabs(corr[i]*0.01) ||
+//        fabs(corr[i]-corr3[i]) > fabs(corr[i]*0.01) ||
+        fabs(corr2[i]-corr3[i]) > fabs(corr2[i]*0.01)
       ) {
         fprintf(stderr, "%d: discrepancy sse %f sse_opt %f cl_cpu %f cl_gpu %f\n", i, corr[i], corr1[i], corr2[i], corr3[i]);
         break;

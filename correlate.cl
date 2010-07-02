@@ -1,3 +1,4 @@
+__attribute__((reqd_work_group_size(64,1,1)))
 __kernel void correlate (
   __global float8 *correlation,
   const int corr_size,
@@ -6,7 +7,7 @@ __kernel void correlate (
   const int sample_size,
   const int stride )
 {
-  float4 l_mask[32], l_base[32];
+  float4 l_mask[24], l_base[24];
   float8 sum = 0;
   int gid = get_global_id(0);
   int offset_y = gid*8 / corr_size;
@@ -16,7 +17,7 @@ __kernel void correlate (
     int mask_idx = y*stride;
     int base_idx = (offset_y+y)*stride + offset_x;
     for (int x=0; x < sample_size-offset_x; x+=16) {
-      for (int i=0; i<32; i++) {
+      for (int i=0; i<24; i++) {
         l_base[i] = base[base_idx+x+i];
         l_mask[i] = mask[mask_idx+x+i];
       }
