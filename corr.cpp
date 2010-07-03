@@ -270,7 +270,7 @@ struct build_t correlate_openCL
  const float *obase, const float *omask,
  int sample_size, int repeats, bool useCPU)
 {
-  int stride = sample_size + 32 + align(sample_size, 8); // pad by 32, align rows on 128 bytes
+  int stride = sample_size + 64 + align(sample_size, 8); // pad by 32, align rows on 128 bytes
   int corr_stride = corr_size + align(corr_size, 8); // pad to divisible by 8
   float *base = (float*)memalign(16, stride*sample_size*16);
   float *mask = (float*)memalign(16, stride*sample_size*16);
