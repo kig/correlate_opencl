@@ -20,6 +20,6 @@ def correlate(corr_size, base, mask, sample_size):
 def mklist(ssz):
   return [ i * 0.000001 for i in xrange(ssz*ssz*4) ]
 
-base = mklist(64)
-mask = mklist(64)
-correlate(32, base, mask, 64)
+base = mklist(128)
+mask = mklist(128)
+correlate(64, base, mask, 128)
