@@ -19,8 +19,7 @@ __kernel void correlate (
   int gid = get_global_id(0);
   int offset_y = gid*(W*8) / corr_size;
   int offset_x = gid*(W*8) - (offset_y*corr_size);
-  int y = get_global_id(1);
-  if (y < sample_size-offset_y) {
+  for (int y=0; y < sample_size-offset_y; y++) {
     int mask_idx = y*stride;
     int base_idx = (offset_y+y)*stride + offset_x;
     for (int x=0; x < sample_size-offset_x; x+=STRIDE) {
@@ -32,16 +31,16 @@ __kernel void correlate (
         for (int j=0; j<SUMLEN; j++)
           sums[j] += l_base[i+j] * l_mask[i];
     }
-    for (int i=0; i<W; i++)
-    correlation[gid*W+i] += (float8)(
-      HADD(sums[i*8+0]),
-      HADD(sums[i*8+1]),
-      HADD(sums[i*8+2]),
-      HADD(sums[i*8+3]),
-      HADD(sums[i*8+4]),
-      HADD(sums[i*8+5]),
-      HADD(sums[i*8+6]),
-      HADD(sums[i*8+7])
-    );
   }
+  for (int i=0; i<W; i++)
+  correlation[gid*W+i] = (float8)(
+    HADD(sums[i*8+0]),
+    HADD(sums[i*8+1]),
+    HADD(sums[i*8+2]),
+    HADD(sums[i*8+3]),
+    HADD(sums[i*8+4]),
+    HADD(sums[i*8+5]),
+    HADD(sums[i*8+6]),
+    HADD(sums[i*8+7])
+  );
 }

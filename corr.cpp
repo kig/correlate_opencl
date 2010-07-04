@@ -352,8 +352,8 @@ struct build_t correlate_openCL
     size_t cpu_sz[1] = { corr_size };
     err = clEnqueueNDRangeKernel( queue, kernel, 1, NULL, cpu_sz, NULL, 0, NULL, NULL);
   } else {
-    size_t gpu_sz[2] = { corr_size*corr_stride/8, sample_size };
-    err = clEnqueueNDRangeKernel( queue, kernel, 2, NULL, gpu_sz, NULL, 0, NULL, NULL);
+    size_t gpu_sz[1] = { corr_size*corr_stride/8 };
+    err = clEnqueueNDRangeKernel( queue, kernel, 1, NULL, gpu_sz, NULL, 0, NULL, NULL);
   }
   if (err != CL_SUCCESS) {
     printf("\nError running kernel\n");
@@ -393,7 +393,7 @@ float* makeImage(int ssz, bool initialize)
   float *img = (float*)memalign(16, ssz*ssz*4*sizeof(float));
   if (initialize)
     for (int i=0; i<ssz*ssz*4; i++)
-      img[i] = 0.000001 * i;
+      img[i] = 1;
   return img;
 }
 
