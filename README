@@ -1,4 +1,38 @@
-An implementation of the algorithm used in http://bit.ly/a1xvZB for 
-comparing CPU and GPU performance in a memory read benchmark. 
+An implementation of the algorithm used in the paper 
+"Believe it or Not! Multicore CPUs can Match GPUs for FLOP-intensive
+Applications!" (http://bit.ly/a1xvZB) for comparing CPU and GPU 
+performance in a memory read benchmark.
 
-(And it was a good excuse to learn OpenCL.)
+And it was a good excuse to learn OpenCL.
+
+Hardware tested:
+  ATI Radeon HD 4850, 67.9 GBps memory bandwidth, 384 GBps L2, 480 GBps L1,
+    1000 mul-add SP GFLOPS, hobbled by lack of local mem and texture support 
+    in ATI's OpenCL drivers, resulting in most reads coming from main memory
+  Core 2 Duo E6400, 6.4 GBps memory bandwidth, 18 GBps L2, 90.5 GBps L1,
+    37.5 mul-add SP GFLOPS, hobbled by lack of performance
+
+Current results (8 FLOPS per 32 bytes memory read):
+ [276 GBps (69 GFLOPS) the paper's optimized impl on 8-core 3 GHz Power7]
+  220 GBps (55 GFLOPS) optimized OpenCL GPU on Radeon HD 4850
+ [150 GBps (38 GFLOPS) the paper's optimized impl on 2x4-core 2.93 GHz Nehalem]
+   86 GBps (22 GFLOPS) naive OpenCL GPU implementation (1D workgroup)
+   72 GBps (18 GFLOPS) optimized OpenCL CPU on Core 2 Duo E6400
+   35 GBps (9 GFLOPS) manually optimized OpenMP SSE implementation
+   25 GBps (6 GFLOPS) naive OpenCL GPU implementation (2D workgroup)
+    5 GBps (1 GFLOPS) naive OpenMP SSE implementation
+    5 GBps (1 GFLOPS) naive scalar C implementation
+    1.1 GBps (0.3 GFLOPS) naive OCaml implementation
+    0.03 GBps (0.008 GFLOPS) naive pure-Python implementation
+
+Compiling and running:
+  export ATISTREAMSDKROOT=path_to_ati_stream_sdk
+  export LD_LIBRARY_PATH=$ATISTREAMSDKROOT/lib/x86:$LD_LIBRARY_PATH
+
+  g++ -O3 -msse3 -mfpmath=sse -fopenmp -lOpenCL -lm -o corr corr.cpp
+  ./corr
+
+  ocamlopt -o ocorr corr.ml
+  time ./ocorr # divide time by 1.21 to get GBps
+
+  time python corr.py # divide time by 1.21 to get GBps
