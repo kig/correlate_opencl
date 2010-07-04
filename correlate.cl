@@ -1,6 +1,6 @@
 #define HADD(v) ((v).x+(v).y+(v).z+(v).w)
 
-#define W 2
+#define W 1
 #define SUMLEN (W*8)
 #define STRIDE 24
 #define CACHE (SUMLEN+STRIDE)
@@ -14,7 +14,7 @@ __kernel void correlate (
   const int sample_size,
   const int stride )
 {
-  float4 l_mults[CACHE];
+  float4 l_base[CACHE], l_mask[CACHE];
   float4 sums[SUMLEN]; for(int i=0; i<SUMLEN; i++) sums[i] = 0;
   int gid = get_global_id(0);
   int offset_y = gid*(W*8) / corr_size;
@@ -23,19 +23,14 @@ __kernel void correlate (
   if (y < sample_size-offset_y) {
     int mask_idx = y*stride;
     int base_idx = (offset_y+y)*stride + offset_x;
-    for (int i=0; i<SUMLEN; i++) {
-      l_mults[i] = base[base_idx+i] * mask[mask_idx+i];
-    }
     for (int x=0; x < sample_size-offset_x; x+=STRIDE) {
-      for (int i=SUMLEN; i<CACHE; i++) {
-        l_mults[i] = base[base_idx+x+i] * mask[mask_idx+x+i];
+      for (int i=0; i<CACHE; i++) {
+        l_base[i] = base[base_idx+x+i];
+        l_mask[i] = mask[mask_idx+x+i];
       }
-      for (int j=0; j<SUMLEN; j++)
-        for (int i=0; i<STRIDE; i++)
-          sums[j] += l_mults[i+j];
-      for (int i=0; i<SUMLEN; i++) {
-        l_mults[i] = l_mults[i+STRIDE];
-      }
+      for (int i=0; i<STRIDE; i++)
+        for (int j=0; j<SUMLEN; j++)
+          sums[j] += l_base[i+j] * l_mask[i];
     }
     for (int i=0; i<W; i++)
     correlation[gid*W+i] += (float8)(

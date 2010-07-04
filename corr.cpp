@@ -134,7 +134,6 @@ void correlate
 {
   const vec4* base = (vec4*) basef;
   const vec4* mask = (vec4*) maskf;
-  #pragma omp parallel for
   for (int offset_y=0; offset_y < corr_size; offset_y++) {
     for (int offset_x=0; offset_x < corr_size; offset_x++) {
       vec4 sum = vec4(0.0);
@@ -150,53 +149,27 @@ void correlate
   }
 }
 
-
 void correlate_optimized
 (
  float *correlation, int corr_size,
- const float *obase, const float *omask,
+ const float *basef, const float *maskf,
  int sample_size)
 {
-  int stride = sample_size + 16 + align(sample_size, 8); // align on 64 bytes
-  int corr_stride = corr_size + align(corr_size, 8); // align on offset_x
-  vec4 *base = (vec4*)memalign(16, stride*sample_size*sizeof(vec4));
-  vec4 *mask = (vec4*)memalign(16, stride*sample_size*sizeof(vec4));
-  for (int y=0; y<sample_size; y++) {
-    memcpy(&base[y*stride], &obase[y*sample_size*4], sample_size*sizeof(vec4));
-    memset(&base[y*stride+sample_size], 0, (stride-sample_size)*sizeof(vec4));
-    memcpy(&mask[y*stride], &omask[y*sample_size*4], sample_size*sizeof(vec4));
-    memset(&mask[y*stride+sample_size], 0, (stride-sample_size)*sizeof(vec4));
-  }
-  vec4* tmp = (vec4*) memalign(16, (corr_stride*corr_size+8)*sizeof(vec4));
-  memset(tmp, 0, (corr_stride*corr_size+8)*sizeof(vec4));
-  #pragma omp parallel for
+  const vec4* base = (vec4*) basef;
+  const vec4* mask = (vec4*) maskf;
   for (int offset_y=0; offset_y < corr_size; offset_y++) {
-    for (int offset_x=0; offset_x < corr_stride; offset_x+=8) {
-      for (int y=0; y < sample_size-offset_y; y++) {
-        int corr_idx = offset_y*corr_stride + offset_x;
-        int mask_index = y * stride;
-        int base_index = (offset_y+y) * stride + offset_x;
-        for (int x=0; x < sample_size-offset_x; x+=16) {
-          for (int i=0; i<16; i++) {
-            tmp[corr_idx+0] += base[base_index+x+i+0] * mask[mask_index+x+i+0];
-            tmp[corr_idx+1] += base[base_index+x+i+1] * mask[mask_index+x+i+1];
-            tmp[corr_idx+2] += base[base_index+x+i+2] * mask[mask_index+x+i+2];
-            tmp[corr_idx+3] += base[base_index+x+i+3] * mask[mask_index+x+i+3];
-            tmp[corr_idx+4] += base[base_index+x+i+4] * mask[mask_index+x+i+4];
-            tmp[corr_idx+5] += base[base_index+x+i+5] * mask[mask_index+x+i+5];
-            tmp[corr_idx+6] += base[base_index+x+i+6] * mask[mask_index+x+i+6];
-            tmp[corr_idx+7] += base[base_index+x+i+7] * mask[mask_index+x+i+7];
-          }
+    for (int rows=0; rows < sample_size-offset_y; rows++) {
+      for (int offset_x=0; offset_x < corr_size; offset_x++) {
+        vec4 sum = vec4(0.0);
+        int mask_index = rows * sample_size;
+        int base_index = (offset_y+rows) * sample_size + offset_x;
+        for (int columns=0; columns < sample_size-offset_x; columns++) {
+          sum += base[base_index+columns] * mask[mask_index+columns];
         }
+        correlation[offset_y*corr_size + offset_x] += sum.sum();
       }
     }
   }
-  for (int y=0; y<corr_size; y++) {
-    for (int x=0; x<corr_size; x++) {
-      correlation[y*corr_size+x] = tmp[y*corr_stride+x].sum();
-    }
-  }
-  free(tmp);
 }
 
 
@@ -268,9 +241,9 @@ struct build_t correlate_openCL
 (
  float *correlation, int corr_size,
  const float *obase, const float *omask,
- int sample_size, int repeats, bool useCPU)
+ int sample_size, bool useCPU)
 {
-  int stride = sample_size + 64 + align(sample_size, 8); // pad by 32, align rows on 128 bytes
+  int stride = sample_size + 32 + align(sample_size, 8); // pad by 32, align rows on 128 bytes
   int corr_stride = corr_size + align(corr_size, 8); // pad to divisible by 8
   float *base = (float*)memalign(16, stride*sample_size*16);
   float *mask = (float*)memalign(16, stride*sample_size*16);
@@ -376,7 +349,7 @@ struct build_t correlate_openCL
     size_t cpu_sz[1] = { corr_size };
     err = clEnqueueNDRangeKernel( queue, kernel, 1, NULL, cpu_sz, NULL, 0, NULL, NULL);
   } else {
-    size_t gpu_sz[2] = { corr_size*corr_stride/16, sample_size };
+    size_t gpu_sz[2] = { corr_size*corr_stride/8, sample_size };
     err = clEnqueueNDRangeKernel( queue, kernel, 2, NULL, gpu_sz, NULL, 0, NULL, NULL);
   }
   if (err != CL_SUCCESS) {
@@ -442,9 +415,13 @@ int main () {
   float *corr1 = (float*)memalign(16, csz*csz*sizeof(float));
   float *corr2 = (float*)memalign(16, csz*csz*sizeof(float));
   float *corr3 = (float*)memalign(16, csz*csz*sizeof(float));
+  memset((void*)corr, 0, csz*csz*sizeof(float));
+  memset((void*)corr1, 0, csz*csz*sizeof(float));
+  memset((void*)corr2, 0, csz*csz*sizeof(float));
+  memset((void*)corr3, 0, csz*csz*sizeof(float));
 
   fprintf(stderr, "Achieved bandwidth in gigabytes per second\n");
-  printf("in_sz\tout_sz\tbw_used\tcl_gpu\tkbw_gpu\tgbld_t\tcl_cpu\tkbw_cpu\tcbld_t\tsse_o\tsse\n");
+  printf("in_sz\tout_sz\tbw_used\tcl_gpu\tkbw_gpu\tgbld_t\tcl_cpu\tkbw_cpu\tcbld_t\tsse_opt\tsse\n");
 
 
   for (int isz=ssz*ssz; isz<=ssz*ssz; isz+=20000) {
@@ -462,18 +439,18 @@ int main () {
     build_t bt;
     for (int j=0; j<repeats; j++) {
       t0 = dtime();
-      bt = correlate_openCL(corr3, sz/2, base, mask, sz, repeats, false);
+      bt = correlate_openCL(corr3, sz/2, base, mask, sz, false);
       elapsed += dtime()-bt.buildTime-t0;
     }
     printf("\t%.2f\t%.2f\t%.2f", repeats*gb/elapsed, gb/bt.kernelTime, bt.buildTime);
     fflush(stdout);
 
     t0 = dtime();
-    bt = correlate_openCL(corr2, sz/2, base, mask, sz, 1, true);
+    bt = correlate_openCL(corr2, sz/2, base, mask, sz, true);
     t1 = dtime()-bt.buildTime;
     printf("\t%.2f\t%.2f\t%.2f", gb/(t1-t0), gb/bt.kernelTime, bt.buildTime);
     fflush(stdout);
-/*
+
     t0 = dtime();
     correlate_optimized(corr1, sz/2, base, mask, sz);
     t1 = dtime();
@@ -485,15 +462,15 @@ int main () {
     t1 = dtime();
     printf("\t%.2f", gb/(t1-t0));
     fflush(stdout);
-*/
+
     printf("\n");
 
     for (int i=0; i<(sz/2)*(sz/2); i++) {
-      // less than one percent error
+      // less than one tenth-thousandth error
       if (
-//        fabs(corr[i]-corr2[i]) > fabs(corr[i]*0.01) ||
-//        fabs(corr[i]-corr3[i]) > fabs(corr[i]*0.01) ||
-        fabs(corr2[i]-corr3[i]) > fabs(corr2[i]*0.01)
+        fabs(corr[i]-corr2[i]) > fabs(corr[i]*0.0001) ||
+        fabs(corr[i]-corr3[i]) > fabs(corr[i]*0.0001) ||
+        fabs(corr[i]-corr1[i]) > fabs(corr[i]*0.0001)
       ) {
         fprintf(stderr, "%d: discrepancy sse %f sse_opt %f cl_cpu %f cl_gpu %f\n", i, corr[i], corr1[i], corr2[i], corr3[i]);
         break;
