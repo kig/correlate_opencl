@@ -35,6 +35,8 @@ struct vec4
 {
   __m128 xmm;
 
+  vec4 () { xmm = _mm_set1_ps(0); }
+
   vec4 (__m128 v) : xmm (v) {}
 
   vec4 (float v) { xmm = _mm_set1_ps(v); }
@@ -103,7 +105,6 @@ void correlate_scalar
  const float *base, const float *mask,
  int sample_size)
 {
-  #pragma omp parallel for
   for (int offset_y=0; offset_y < corr_size; offset_y++) {
     for (int offset_x=0; offset_x < corr_size; offset_x++) {
       int correlation_index = offset_y*corr_size + offset_x;
@@ -134,6 +135,7 @@ void correlate
 {
   const vec4* base = (vec4*) basef;
   const vec4* mask = (vec4*) maskf;
+  #pragma omp parallel for
   for (int offset_y=0; offset_y < corr_size; offset_y++) {
     for (int offset_x=0; offset_x < corr_size; offset_x++) {
       vec4 sum = vec4(0.0);
@@ -159,8 +161,9 @@ void correlate_optimized
   const vec4* mask = (vec4*) maskf;
   for (int offset_y=0; offset_y < corr_size; offset_y++) {
     for (int rows=0; rows < sample_size-offset_y; rows++) {
+      #pragma omp parallel for
       for (int offset_x=0; offset_x < corr_size; offset_x++) {
-        vec4 sum = vec4(0.0);
+        vec4 sum;
         int mask_index = rows * sample_size;
         int base_index = (offset_y+rows) * sample_size + offset_x;
         for (int columns=0; columns < sample_size-offset_x; columns++) {
