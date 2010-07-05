@@ -12,9 +12,15 @@ Hardware tested:
   Core 2 Duo E6400, 6.4 GBps memory bandwidth, 18 GBps L2, 90.5 GBps L1,
     37.5 mul-add SP GFLOPS, hobbled by lack of performance
 
+GPU upper limits:
+  Doing all reads from registers (hah), I got 3000 GBps (750 GFLOPS).
+  Reading from a private mem array got 1500 GBps.
+  All reads in lockstep got 480 GBps. There's some inter-thread data 
+  reuse going on in there.
+
 Current results (8 FLOPS per 32 bytes memory read):
  [276 GBps (69 GFLOPS) the paper's optimized impl on 8-core 3 GHz Power7]
-  220 GBps (55 GFLOPS) optimized OpenCL GPU on Radeon HD 4850
+  240 GBps (60 GFLOPS) optimized OpenCL GPU on Radeon HD 4850
  [150 GBps (38 GFLOPS) the paper's optimized impl on 2x4-core 2.93 GHz Nehalem]
    86 GBps (22 GFLOPS) naive OpenCL GPU implementation (1D workgroup)
    72 GBps (18 GFLOPS) optimized OpenCL CPU on Core 2 Duo E6400
