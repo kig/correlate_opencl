@@ -393,7 +393,7 @@ float* makeImage(int ssz, bool initialize)
   float *img = (float*)memalign(16, ssz*ssz*4*sizeof(float));
   if (initialize)
     for (int i=0; i<ssz*ssz*4; i++)
-      img[i] = 1;
+      img[i] = 0.00625*(i/(ssz*4)) + 0.00625*(i%(ssz*4));
   return img;
 }
 

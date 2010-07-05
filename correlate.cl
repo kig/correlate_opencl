@@ -2,7 +2,7 @@
 
 #define W 1
 #define SUMLEN (W*8)
-#define STRIDE 24
+#define STRIDE 16
 #define CACHE (SUMLEN+STRIDE)
 
 __attribute__((reqd_work_group_size(64,1,1)))
@@ -20,16 +20,24 @@ __kernel void correlate (
   int offset_y = gid*(W*8) / corr_size;
   int offset_x = gid*(W*8) - (offset_y*corr_size);
   for (int y=0; y < sample_size-offset_y; y++) {
-    int mask_idx = y*stride;
-    int base_idx = (offset_y+y)*stride + offset_x;
-    for (int x=0; x < sample_size-offset_x; x+=STRIDE) {
-      for (int i=0; i<CACHE; i++) {
-        l_base[i] = base[base_idx+x+i];
-        l_mask[i] = mask[mask_idx+x+i];
+    int mask_idx = y*stride - offset_x;
+    int mi = max(mask_idx, 0);
+    int base_idx = (offset_y+y)*stride;
+    for (int x=offset_x%STRIDE; x < sample_size; x+=STRIDE) {
+      if (x < offset_x) {
+        for (int i=0; i<8; i++) {
+          l_base[i] = base[base_idx+x+i];
+          l_mask[i] = mask[mi+x+i];
+        }
+      } else {
+        for (int i=0; i<CACHE; i++) {
+          l_base[i] = base[base_idx+x+i];
+          l_mask[i] = mask[mask_idx+x+i];
+        }
+        for (int i=0; i<STRIDE; i++)
+          for (int j=0; j<SUMLEN; j++)
+            sums[j] += l_base[i+j] * l_mask[i];
       }
-      for (int i=0; i<STRIDE; i++)
-        for (int j=0; j<SUMLEN; j++)
-          sums[j] += l_base[i+j] * l_mask[i];
     }
   }
   for (int i=0; i<W; i++)
