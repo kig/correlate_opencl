@@ -238,7 +238,7 @@ void print_error(int err) {
   exit(1);
 }
 
-struct build_t { double buildTime; double kernelTime; };
+struct build_t { double buildTime; double kernelTime; double argTime; double releaseTime; double readTime; };
 
 struct build_t correlate_openCL
 (
@@ -246,20 +246,6 @@ struct build_t correlate_openCL
  const float *obase, const float *omask,
  int sample_size, bool useCPU)
 {
-  int stride = sample_size + 32 + align(sample_size, 8); // pad by 32, align rows on 128 bytes
-  int corr_stride = corr_size + align(corr_size, 8); // pad to divisible by 8
-  float *base = (float*)memalign(16, stride*sample_size*16);
-  float *mask = (float*)memalign(16, stride*sample_size*16);
-  for (int y=0; y<sample_size; y++) {
-    memcpy(&base[y*stride*4], &obase[y*sample_size*4], sample_size*16);
-    memset(&base[y*stride*4+sample_size*4], 0, (stride-sample_size)*16);
-    memcpy(&mask[y*stride*4], &omask[y*sample_size*4], sample_size*16);
-    memset(&mask[y*stride*4+sample_size*4], 0, (stride-sample_size)*16);
-  }
-
-  float *tmp = (float*)memalign(16, corr_stride*corr_size*sizeof(cl_float));
-  memset(tmp, 0, corr_stride*corr_size*sizeof(cl_float));
-
   double t0 = dtime();
 
   cl_platform_id platform;
@@ -268,14 +254,14 @@ struct build_t correlate_openCL
   cl_device_id device;
   clGetDeviceIDs( platform, useCPU ? CL_DEVICE_TYPE_CPU : CL_DEVICE_TYPE_GPU, 1, &device, NULL );
 
-//   cl_int support;
-//   clGetDeviceInfo( device, CL_DEVICE_IMAGE_SUPPORT, sizeof(cl_int), &support, NULL );
-//   printf("\nImage support: %d\n", support == CL_TRUE ? 1 : 0);
+  cl_int support;
+  clGetDeviceInfo( device, CL_DEVICE_IMAGE_SUPPORT, sizeof(cl_int), &support, NULL );
+  support &= !useCPU;
 
   cl_context context = clCreateContext( NULL, 1, &device, NULL, NULL, NULL );
   cl_command_queue queue = clCreateCommandQueue( context, device, 0, NULL );
 
-  const char *program_source_filename = useCPU ? "correlate2.cl" : "correlate.cl";
+  const char *program_source_filename = useCPU ? "correlate2.cl" : (support ? "correlate_image.cl" : "correlate.cl");
 
   int err = 0;
 
@@ -292,12 +278,33 @@ struct build_t correlate_openCL
     print_error(err);
   }
 
-  double t1 = dtime();
-  double buildTime = t1-t0;
-
   cl_kernel kernel = clCreateKernel( program, "correlate", NULL );
 
-  cl_mem base_buf = clCreateBuffer(
+  double buildTime = dtime()-t0;
+
+  t0 = dtime();
+
+  int stride = (support ? sample_size : sample_size + 32) + align(sample_size, 8); // pad by 32, align rows on 128 bytes
+  int corr_stride = corr_size + align(corr_size, 8); // pad to divisible by 8
+  float *base = (float*)memalign(16, stride*sample_size*16);
+  float *mask = (float*)memalign(16, stride*sample_size*16);
+  for (int y=0; y<sample_size; y++) {
+    memcpy(&base[y*stride*4], &obase[y*sample_size*4], sample_size*16);
+    memset(&base[y*stride*4+sample_size*4], 0, (stride-sample_size)*16);
+    memcpy(&mask[y*stride*4], &omask[y*sample_size*4], sample_size*16);
+    memset(&mask[y*stride*4+sample_size*4], 0, (stride-sample_size)*16);
+  }
+
+  float *tmp = (float*)memalign(16, corr_stride*corr_size*sizeof(cl_float));
+  memset(tmp, 0, corr_stride*corr_size*sizeof(cl_float));
+
+  cl_image_format fmt;
+  fmt.image_channel_order = CL_RGBA;
+  fmt.image_channel_data_type = CL_FLOAT;
+
+  cl_mem base_buf = support
+  ? clCreateImage2D(context, CL_MEM_READ_ONLY|CL_MEM_COPY_HOST_PTR, &fmt, stride, sample_size, 0, (void*)base, &err)
+  : clCreateBuffer(
     context,
     CL_MEM_READ_ONLY|CL_MEM_COPY_HOST_PTR,
     stride*sample_size*sizeof(cl_float4),
@@ -308,7 +315,9 @@ struct build_t correlate_openCL
   }
 
   err = CL_SUCCESS;
-  cl_mem mask_buf = clCreateBuffer(
+  cl_mem mask_buf = support
+  ? clCreateImage2D(context, CL_MEM_READ_ONLY|CL_MEM_COPY_HOST_PTR, &fmt, stride, sample_size, 0, (void*)mask, &err)
+  : clCreateBuffer(
     context,
     CL_MEM_READ_ONLY|CL_MEM_COPY_HOST_PTR,
     stride*sample_size*sizeof(cl_float4),
@@ -347,6 +356,8 @@ struct build_t correlate_openCL
   if (err != CL_SUCCESS) printf("\narg 5 error: %d\n", err);
   err = CL_SUCCESS;
 
+  double argTime = dtime() - t0;
+
   t0 = dtime();
   if (useCPU) {
     size_t cpu_sz[1] = { corr_size };
@@ -362,6 +373,8 @@ struct build_t correlate_openCL
   clFinish(queue);
   double kernelTime = dtime() - t0;
 
+  t0 = dtime();
+
   clEnqueueReadBuffer(queue, corr_buf, CL_TRUE, 0, corr_stride*corr_size*sizeof(cl_float), (void*)tmp, NULL, NULL, NULL);
 
   for (int y=0; y<corr_size; y++) {
@@ -369,6 +382,10 @@ struct build_t correlate_openCL
       correlation[y*corr_size+x] = tmp[y*corr_stride+x];
     }
   }
+
+  double readTime = dtime () - t0;
+
+  t0 = dtime();
 
   clReleaseMemObject( base_buf );
   clReleaseMemObject( mask_buf );
@@ -381,9 +398,13 @@ struct build_t correlate_openCL
   free(base);
   free(mask);
   free(tmp);
+  double releaseTime = dtime () - t0;
   build_t t;
   t.buildTime = buildTime;
   t.kernelTime = kernelTime;
+  t.readTime = readTime;
+  t.argTime = argTime;
+  t.releaseTime = releaseTime;
   return t;
 }
 
@@ -424,7 +445,7 @@ int main () {
   memset((void*)corr3, 0, csz*csz*sizeof(float));
 
   fprintf(stderr, "Achieved bandwidth in gigabytes per second\n");
-  printf("in_sz\tout_sz\tbw_used\tcl_gpu\tkbw_gpu\tgbld_t\tcl_cpu\tkbw_cpu\tcbld_t\tsse_opt\tsse\n");
+  printf("in_sz\tout_sz\tbw_used\tcl_gpu\tkbw_gpu\tgbld_t\targt\treadt\trelt\tcl_cpu\tkbw_cpu\tcbld_t\tsse_opt\tsse\n");
 
 
   for (int isz=ssz*ssz; isz<=ssz*ssz; isz+=20000) {
@@ -445,7 +466,7 @@ int main () {
       bt = correlate_openCL(corr3, sz/2, base, mask, sz, false);
       elapsed += dtime()-bt.buildTime-t0;
     }
-    printf("\t%.2f\t%.2f\t%.2f", repeats*gb/elapsed, gb/bt.kernelTime, bt.buildTime);
+    printf("\t%.2f\t%.2f\t%.2f\t%.4f\t%.4f\t%.4f", repeats*gb/elapsed, gb/bt.kernelTime, bt.buildTime, bt.argTime, bt.readTime, bt.releaseTime);
     fflush(stdout);
 
     t0 = dtime();
