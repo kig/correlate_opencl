@@ -20,11 +20,12 @@ GPU upper limits:
 
 Current results (8 FLOPS per 32 bytes memory read):
  [276 GBps (69 GFLOPS) the paper's optimized impl on 8-core 3 GHz Power7]
-  240 GBps (60 GFLOPS) optimized OpenCL GPU on Radeon HD 4850
+  240 GBps (60 GFLOPS) optimized OpenCL GPU on Radeon HD 4850 (512x512 input)
+  160 GBps (40 GFLOPS) optimized OpenCL GPU on Radeon HD 4850 (500x500 input)
  [150 GBps (38 GFLOPS) the paper's optimized impl on 2x4-core 2.93 GHz Nehalem]
    86 GBps (22 GFLOPS) naive OpenCL GPU implementation (1D workgroup)
    84 GBps (21 GFLOPS) optimized OpenCL CPU on Core 2 Duo E6400
-   35 GBps (9 GFLOPS) manually optimized OpenMP SSE implementation
+   43 GBps (11 GFLOPS) manually optimized OpenMP SSE implementation
    25 GBps (6 GFLOPS) naive OpenCL GPU implementation (2D workgroup)
     5 GBps (1 GFLOPS) naive OpenMP SSE implementation
     5 GBps (1 GFLOPS) naive scalar C implementation
