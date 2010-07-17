@@ -154,25 +154,36 @@ void correlate
 void correlate_optimized
 (
  float *correlation, int corr_size,
- const float *basef, const float *maskf,
+ const float *obase, const float *omask,
  int sample_size)
 {
-  const vec4* base = (vec4*) basef;
-  const vec4* mask = (vec4*) maskf;
+  int stride = sample_size + 4;
+  vec4 *base = (vec4*)memalign(16, stride*sample_size*16);
+  vec4 *mask = (vec4*)memalign(16, stride*sample_size*16);
+  for (int y=0; y<sample_size; y++) {
+    memcpy(&base[y*stride], &obase[y*sample_size*4], sample_size*16);
+    memset(&base[y*stride+sample_size], 0, (stride-sample_size)*16);
+    memcpy(&mask[y*stride], &omask[y*sample_size*4], sample_size*16);
+    memset(&mask[y*stride+sample_size], 0, (stride-sample_size)*16);
+  }
   for (int offset_y=0; offset_y < corr_size; offset_y++) {
     for (int rows=0; rows < sample_size-offset_y; rows++) {
       #pragma omp parallel for
-      for (int offset_x=0; offset_x < corr_size; offset_x++) {
-        vec4 sum;
-        int mask_index = rows * sample_size;
-        int base_index = (offset_y+rows) * sample_size + offset_x;
+      for (int offset_x=0; offset_x < corr_size; offset_x+=4) {
+        vec4 sum[4];
+        int mask_index = rows * stride;
+        int base_index = (offset_y+rows) * stride + offset_x;
         for (int columns=0; columns < sample_size-offset_x; columns++) {
-          sum += base[base_index+columns] * mask[mask_index+columns];
+          for (int i=0; i<4; i++)
+            sum[i] += base[base_index+columns+i] * mask[mask_index+columns];
         }
-        correlation[offset_y*corr_size + offset_x] += sum.sum();
+        for (int i=0; i<4; i++)
+          correlation[offset_y*corr_size + offset_x + i] += sum[i].sum();
       }
     }
   }
+  free(base);
+  free(mask);
 }
 
 
