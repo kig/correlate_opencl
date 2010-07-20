@@ -8,8 +8,6 @@ g++ -O3 -msse3 -mfpmath=sse -fopenmp -lOpenCL -lm -o corr_naive corr_naive.cpp
 #include <stdio.h>
 #include <sys/time.h>
 #include <math.h>
-#include <emmintrin.h>
-#include <pmmintrin.h>
 #include <malloc.h>
 #include <string.h>
 
@@ -18,6 +16,8 @@ g++ -O3 -msse3 -mfpmath=sse -fopenmp -lOpenCL -lm -o corr_naive corr_naive.cpp
 #include <sys/stat.h>
 
 #include <CL/cl.h>
+
+#include "sse.h"
 
 using namespace std;
 
@@ -30,73 +30,6 @@ double dtime() {
 int align(int idx, int n) {
   return (n - idx%n) % n;
 }
-
-struct vec4
-{
-  __m128 xmm;
-
-  vec4 () { xmm = _mm_set1_ps(0); }
-
-  vec4 (__m128 v) : xmm (v) {}
-
-  vec4 (float v) { xmm = _mm_set1_ps(v); }
-
-  vec4 (float x, float y, float z, float w)
-  { xmm = _mm_set_ps(w,z,y,x); }
-
-  vec4 (const float *v) { xmm = _mm_load_ps(v); }
-
-  vec4 shuffle (int a, int b, int c, int d) const
-  { return vec4(_mm_shuffle_ps(xmm, xmm, _MM_SHUFFLE(d,c,b,a))); }
-
-  vec4 shuffle (const vec4 &v, int a, int b, int c, int d) const
-  { return vec4(_mm_shuffle_ps(xmm, v.xmm, _MM_SHUFFLE(d,c,b,a))); }
-
-  vec4 hadd (const vec4 &v) const
-  { return vec4(_mm_hadd_ps(xmm, v.xmm)); }
-
-  vec4 hsub (const vec4 &v) const
-  { return vec4(_mm_hsub_ps(xmm, v.xmm)); }
-
-  float sum () const
-  {
-    float c;
-    vec4 s = hadd(*this).hadd(*this);
-    _mm_store_ss(&c, s.xmm);
-    return c;
-  }
-
-  float dot (const vec4 &v) const
-  { return (*this * v).sum(); }
-
-  vec4 operator* (const vec4 &v) const
-  { return vec4(_mm_mul_ps(xmm, v.xmm)); }
-
-  vec4 operator+ (const vec4 &v) const
-  { return vec4(_mm_add_ps(xmm, v.xmm)); }
-
-  vec4 operator- (const vec4 &v) const
-  { return vec4(_mm_sub_ps(xmm, v.xmm)); }
-
-  vec4 operator/ (const vec4 &v) const
-  { return vec4(_mm_div_ps(xmm, v.xmm)); }
-
-  void operator*= (const vec4 &v)
-  { xmm = _mm_mul_ps(xmm, v.xmm); }
-
-  void operator+= (const vec4 &v)
-  { xmm = _mm_add_ps(xmm, v.xmm); }
-
-  void operator-= (const vec4 &v)
-  { xmm = _mm_sub_ps(xmm, v.xmm); }
-
-  void operator/= (const vec4 &v)
-  { xmm = _mm_div_ps(xmm, v.xmm); }
-
-  void operator>> (float *v) const
-  { _mm_store_ps(v, xmm); }
-
-};
 
 
 void correlate_scalar
@@ -133,12 +66,12 @@ void correlate
  const float *basef, const float *maskf,
  int sample_size)
 {
-  const vec4* base = (vec4*) basef;
-  const vec4* mask = (vec4*) maskf;
+  const float4* base = (float4*) basef;
+  const float4* mask = (float4*) maskf;
   #pragma omp parallel for
   for (int offset_y=0; offset_y < corr_size; offset_y++) {
     for (int offset_x=0; offset_x < corr_size; offset_x++) {
-      vec4 sum = vec4(0.0);
+      float4 sum = float4(0.0);
       for (int rows=0; rows < sample_size-offset_y; rows++) {
         int mask_index = rows * sample_size;
         int base_index = (offset_y+rows) * sample_size + offset_x;

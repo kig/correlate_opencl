@@ -8,8 +8,6 @@ g++ -O3 -msse3 -mfpmath=sse -fopenmp -lOpenCL -lm -o corr corr.cpp
 #include <stdio.h>
 #include <sys/time.h>
 #include <math.h>
-#include <emmintrin.h>
-#include <pmmintrin.h>
 #include <malloc.h>
 #include <string.h>
 
@@ -18,6 +16,8 @@ g++ -O3 -msse3 -mfpmath=sse -fopenmp -lOpenCL -lm -o corr corr.cpp
 #include <sys/stat.h>
 
 #include <CL/cl.h>
+
+#include "sse.h"
 
 using namespace std;
 
@@ -30,73 +30,6 @@ double dtime() {
 int align(int idx, int n) {
   return (n - idx%n) % n;
 }
-
-struct vec4
-{
-  __m128 xmm;
-
-  vec4 () { xmm = _mm_set1_ps(0); }
-
-  vec4 (__m128 v) : xmm (v) {}
-
-  vec4 (float v) { xmm = _mm_set1_ps(v); }
-
-  vec4 (float x, float y, float z, float w)
-  { xmm = _mm_set_ps(w,z,y,x); }
-
-  vec4 (const float *v) { xmm = _mm_load_ps(v); }
-
-  vec4 shuffle (int a, int b, int c, int d) const
-  { return vec4(_mm_shuffle_ps(xmm, xmm, _MM_SHUFFLE(d,c,b,a))); }
-
-  vec4 shuffle (const vec4 &v, int a, int b, int c, int d) const
-  { return vec4(_mm_shuffle_ps(xmm, v.xmm, _MM_SHUFFLE(d,c,b,a))); }
-
-  vec4 hadd (const vec4 &v) const
-  { return vec4(_mm_hadd_ps(xmm, v.xmm)); }
-
-  vec4 hsub (const vec4 &v) const
-  { return vec4(_mm_hsub_ps(xmm, v.xmm)); }
-
-  float sum () const
-  {
-    float c;
-    vec4 s = hadd(*this).hadd(*this);
-    _mm_store_ss(&c, s.xmm);
-    return c;
-  }
-
-  float dot (const vec4 &v) const
-  { return (*this * v).sum(); }
-
-  vec4 operator* (const vec4 &v) const
-  { return vec4(_mm_mul_ps(xmm, v.xmm)); }
-
-  vec4 operator+ (const vec4 &v) const
-  { return vec4(_mm_add_ps(xmm, v.xmm)); }
-
-  vec4 operator- (const vec4 &v) const
-  { return vec4(_mm_sub_ps(xmm, v.xmm)); }
-
-  vec4 operator/ (const vec4 &v) const
-  { return vec4(_mm_div_ps(xmm, v.xmm)); }
-
-  void operator*= (const vec4 &v)
-  { xmm = _mm_mul_ps(xmm, v.xmm); }
-
-  void operator+= (const vec4 &v)
-  { xmm = _mm_add_ps(xmm, v.xmm); }
-
-  void operator-= (const vec4 &v)
-  { xmm = _mm_sub_ps(xmm, v.xmm); }
-
-  void operator/= (const vec4 &v)
-  { xmm = _mm_div_ps(xmm, v.xmm); }
-
-  void operator>> (float *v) const
-  { _mm_store_ps(v, xmm); }
-
-};
 
 
 void correlate_scalar
@@ -133,12 +66,12 @@ void correlate
  const float *basef, const float *maskf,
  int sample_size)
 {
-  const vec4* base = (vec4*) basef;
-  const vec4* mask = (vec4*) maskf;
+  const float4* base = (float4*) basef;
+  const float4* mask = (float4*) maskf;
   #pragma omp parallel for
   for (int offset_y=0; offset_y < corr_size; offset_y++) {
     for (int offset_x=0; offset_x < corr_size; offset_x++) {
-      vec4 sum = vec4(0.0);
+      float4 sum = float4(0.0);
       for (int rows=0; rows < sample_size-offset_y; rows++) {
         int mask_index = rows * sample_size;
         int base_index = (offset_y+rows) * sample_size + offset_x;
@@ -158,19 +91,19 @@ void correlate_optimized
  int sample_size)
 {
   int stride = sample_size + 4;
-  vec4 *base = (vec4*)memalign(16, stride*sample_size*16);
-  vec4 *mask = (vec4*)memalign(16, stride*sample_size*16);
+  float4 *base = (float4*)memalign(16, stride*sample_size*sizeof(float4));
+  float4 *mask = (float4*)memalign(16, stride*sample_size*sizeof(float4));
   for (int y=0; y<sample_size; y++) {
-    memcpy(&base[y*stride], &obase[y*sample_size*4], sample_size*16);
-    memset(&base[y*stride+sample_size], 0, (stride-sample_size)*16);
-    memcpy(&mask[y*stride], &omask[y*sample_size*4], sample_size*16);
-    memset(&mask[y*stride+sample_size], 0, (stride-sample_size)*16);
+    memcpy(&base[y*stride], &obase[y*sample_size*4], sample_size*sizeof(float4));
+    memset(&base[y*stride+sample_size], 0, (stride-sample_size)*sizeof(float4));
+    memcpy(&mask[y*stride], &omask[y*sample_size*4], sample_size*sizeof(float4));
+    memset(&mask[y*stride+sample_size], 0, (stride-sample_size)*sizeof(float4));
   }
   for (int offset_y=0; offset_y < corr_size; offset_y++) {
     for (int rows=0; rows < sample_size-offset_y; rows++) {
       #pragma omp parallel for
       for (int offset_x=0; offset_x < corr_size; offset_x+=4) {
-        vec4 sum[4];
+        float4 sum[4];
         int mask_index = rows * stride;
         int base_index = (offset_y+rows) * stride + offset_x;
         for (int columns=0; columns < sample_size-offset_x; columns++) {
@@ -178,6 +111,41 @@ void correlate_optimized
             sum[i] += base[base_index+columns+i] * mask[mask_index+columns];
         }
         for (int i=0; i<4; i++)
+          correlation[offset_y*corr_size + offset_x + i] += sum[i].sum();
+      }
+    }
+  }
+  free(base);
+  free(mask);
+}
+
+void correlate_optimized_double
+(
+ double *correlation, int corr_size,
+ const double *obase, const double *omask,
+ int sample_size)
+{
+  int stride = sample_size + 2;
+  double4 *base = (double4*)memalign(16, stride*sample_size*sizeof(double4));
+  double4 *mask = (double4*)memalign(16, stride*sample_size*sizeof(double4));
+  for (int y=0; y<sample_size; y++) {
+    memcpy(&base[y*stride], &obase[y*sample_size*4], sample_size*sizeof(double4));
+    memset(&base[y*stride+sample_size], 0, (stride-sample_size)*sizeof(double4));
+    memcpy(&mask[y*stride], &omask[y*sample_size*4], sample_size*sizeof(double4));
+    memset(&mask[y*stride+sample_size], 0, (stride-sample_size)*sizeof(double4));
+  }
+  for (int offset_y=0; offset_y < corr_size; offset_y++) {
+    for (int rows=0; rows < sample_size-offset_y; rows++) {
+      #pragma omp parallel for
+      for (int offset_x=0; offset_x < corr_size; offset_x+=2) {
+        double4 sum[2];
+        int mask_index = rows * stride;
+        int base_index = (offset_y+rows) * stride + offset_x;
+        for (int columns=0; columns < sample_size-offset_x; columns++) {
+          for (int i=0; i<2; i++)
+            sum[i] += base[base_index+columns+i] * mask[mask_index+columns];
+        }
+        for (int i=0; i<2; i++)
           correlation[offset_y*corr_size + offset_x + i] += sum[i].sum();
       }
     }
@@ -430,6 +398,15 @@ float* makeImage(int ssz, bool initialize)
   return img;
 }
 
+double* makeImaged(int ssz, bool initialize)
+{
+  double *img = (double*)memalign(16, ssz*ssz*4*sizeof(double));
+  if (initialize)
+    for (int i=0; i<ssz*ssz*4; i++)
+      img[i] = 0.00625*(i/(ssz*4)) + 0.00625*(i%(ssz*4));
+  return img;
+}
+
 
 int main () {
   double t0, t1;
@@ -438,26 +415,35 @@ int main () {
 
   float *base = makeImage(ssz, true);
   float *mask = makeImage(ssz, true);
+  double *based = makeImaged(ssz, true);
+  double *maskd = makeImaged(ssz, true);
   // reverse mask
   float tmp;
+  double tmpd;
   int len = ssz*ssz*4;
   for (int i=0; i<len/2; i++) {
     tmp = mask[len-1-i];
     mask[len-1-i] = mask[i];
     mask[i] = tmp;
+    tmpd = maskd[len-1-i];
+    maskd[len-1-i] = maskd[i];
+    maskd[i] = tmpd;
   }
 
   float *corr = (float*)memalign(16, csz*csz*sizeof(float));
   float *corr1 = (float*)memalign(16, csz*csz*sizeof(float));
   float *corr2 = (float*)memalign(16, csz*csz*sizeof(float));
   float *corr3 = (float*)memalign(16, csz*csz*sizeof(float));
+  double *corr4 = (double*)memalign(16, csz*csz*sizeof(double));
   memset((void*)corr, 0, csz*csz*sizeof(float));
   memset((void*)corr1, 0, csz*csz*sizeof(float));
   memset((void*)corr2, 0, csz*csz*sizeof(float));
   memset((void*)corr3, 0, csz*csz*sizeof(float));
+  memset((void*)corr4, 0, csz*csz*sizeof(double));
 
-  fprintf(stderr, "Achieved bandwidth in gigabytes per second\n");
-  printf("in_sz\tout_sz\tbw_used\tcl_gpu\tkbw_gpu\tgbld_t\targt\treadt\trelt\tcl_cpu\tkbw_cpu\tcbld_t\tsse_opt\tsse\n");
+
+  fprintf(stderr, "Achieved bandwidth in GBps, divide by four for GFLOPS (sse_dbl by eight)\n");
+  printf("in_sz\tout_sz\tbw_used\tcl_gpu\tkbw_gpu\tgbld_t\targt\treadt\trelt\tcl_cpu\tkbw_cpu\tcbld_t\tsse_opt\tsse_dbl\tsse\n");
 
 
   for (int isz=ssz*ssz; isz<=ssz*ssz; isz+=20000) {
@@ -494,6 +480,14 @@ int main () {
     fflush(stdout);
 
     t0 = dtime();
+    correlate_optimized_double(corr4, sz/2, based, maskd, sz);
+    t1 = dtime();
+    // twice as much stuff to truck with doubles
+    printf("\t%.2f", (2*gb)/(t1-t0));
+    fflush(stdout);
+
+
+    t0 = dtime();
     correlate(corr, sz/2, base, mask, sz);
     t1 = dtime();
     printf("\t%.2f", gb/(t1-t0));
@@ -511,9 +505,10 @@ int main () {
         // ground optimized CPU impl to normal impl
         // the order of calculations is different,
         // which causes the discrepancy?
-        fabs(corr[i]-corr1[i]) > fabs(corr[i]*0.001)
+        fabs(corr[i]-corr1[i]) > fabs(corr[i]*0.001) ||
+        fabs(corr4[i]-corr1[i]) > fabs(corr1[i]*0.001)
       ) {
-        fprintf(stderr, "%d: discrepancy sse %f sse_opt %f cl_cpu %f cl_gpu %f\n", i, corr[i], corr1[i], corr2[i], corr3[i]);
+        fprintf(stderr, "%d: discrepancy sse %f sse_opt %f sse_dbl %f cl_cpu %f cl_gpu %f\n", i, corr[i], corr1[i], corr4[i], corr2[i], corr3[i]);
         break;
       }
     }
