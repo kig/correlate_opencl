@@ -36,6 +36,7 @@ void mmul4x4 (const float *a, const float *b, float *dst)
 
 */
 
+#include <mmintrin.h>
 #include <emmintrin.h>
 #include <pmmintrin.h>
 
@@ -79,6 +80,33 @@ struct float4
 
   float dot (const float4 &v) const
   { return (*this * v).sum(); }
+
+  float4 recip () const
+  { return float4(_mm_rcp_ps(xmm)); }
+
+  float4 sqrt () const
+  { return float4(_mm_sqrt_ps(xmm)); }
+
+  float4 rsqrt () const
+  { return float4(_mm_rsqrt_ps(xmm)); }
+
+  float4 min (const float4 &v) const
+  { return float4(_mm_min_ps(xmm, v.xmm)); }
+
+  float4 max (const float4 &v) const
+  { return float4(_mm_max_ps(xmm, v.xmm)); }
+
+  float4 andnot (const float4 &v) const
+  { return float4(_mm_andnot_ps(xmm, v.xmm)); }
+
+  float4 operator& (const float4 &v) const
+  { return float4(_mm_and_ps(xmm, v.xmm)); }
+
+  float4 operator| (const float4 &v) const
+  { return float4(_mm_or_ps(xmm, v.xmm)); }
+
+  float4 operator^ (const float4 &v) const
+  { return float4(_mm_xor_ps(xmm, v.xmm)); }
 
   float4 operator* (const float4 &v) const
   { return float4(_mm_mul_ps(xmm, v.xmm)); }
@@ -180,6 +208,27 @@ struct double2
   double dot (const double2 &v) const
   { return (*this * v).sum(); }
 
+  double2 sqrt () const
+  { return double2(_mm_sqrt_pd(xmm)); }
+
+  double2 min (const double2 &v) const
+  { return double2(_mm_min_pd(xmm, v.xmm)); }
+
+  double2 max (const double2 &v) const
+  { return double2(_mm_max_pd(xmm, v.xmm)); }
+
+  double2 andnot (const double2 &v) const
+  { return double2(_mm_andnot_pd(xmm, v.xmm)); }
+
+  double2 operator& (const double2 &v) const
+  { return double2(_mm_and_pd(xmm, v.xmm)); }
+
+  double2 operator| (const double2 &v) const
+  { return double2(_mm_or_pd(xmm, v.xmm)); }
+
+  double2 operator^ (const double2 &v) const
+  { return double2(_mm_xor_pd(xmm, v.xmm)); }
+
   double2 operator* (const double2 &v) const
   { return double2(_mm_mul_pd(xmm, v.xmm)); }
 
@@ -232,6 +281,27 @@ struct double4
 
   double dot (const double4 &v) const
   { return (*this * v).sum(); }
+
+  double4 sqrt () const
+  { return double4(_mm_sqrt_pd(xmm0), _mm_sqrt_pd(xmm1)); }
+
+  double4 min (const double4 &v) const
+  { return double4(_mm_min_pd(xmm0, v.xmm0), _mm_min_pd(xmm1, v.xmm1)); }
+
+  double4 max (const double4 &v) const
+  { return double4(_mm_max_pd(xmm0, v.xmm0), _mm_max_pd(xmm1, v.xmm1)); }
+
+  double4 andnot (const double4 &v) const
+  { return double4(_mm_andnot_pd(xmm0, v.xmm0), _mm_andnot_pd(xmm1, v.xmm1)); }
+
+  double4 operator& (const double4 &v) const
+  { return double4(_mm_and_pd(xmm0, v.xmm0), _mm_and_pd(xmm1, v.xmm1)); }
+
+  double4 operator| (const double4 &v) const
+  { return double4(_mm_or_pd(xmm0, v.xmm0), _mm_or_pd(xmm1, v.xmm1)); }
+
+  double4 operator^ (const double4 &v) const
+  { return double4(_mm_xor_pd(xmm0, v.xmm0), _mm_xor_pd(xmm1, v.xmm1)); }
 
   double4 operator* (const double4 &v) const
   { return double4(_mm_mul_pd(xmm0, v.xmm0), _mm_mul_pd(xmm1, v.xmm1)); }
