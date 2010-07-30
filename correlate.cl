@@ -21,7 +21,7 @@ __kernel void correlate (
   int offset_x = gid*(W*8) - (offset_y*corr_size);
   for (int y=0; y < sample_size-offset_y; y++) {
     int mask_idx = y*stride - offset_x;
-    int mi = max(mask_idx, 0);
+    int mi = y*stride;
     int base_idx = (offset_y+y)*stride;
     for (int x=offset_x%STRIDE; x < sample_size; x+=STRIDE) {
       if (x < offset_x) {
