@@ -18,11 +18,11 @@ Current results (8 FLOPS per 32 bytes memory read):
   by the reported runtimes.
 
  [276 GBps (69 GFLOPS) the paper's optimized impl on 8-core 3 GHz Power7]
-  240 GBps (60 GFLOPS) optimized OpenCL GPU on Radeon HD 4850 (640x640 input)
+  274 GBps (69 GFLOPS) optimized OpenCL GPU on Radeon HD 4850 (640x640 input)
+  245 GBps (61 GFLOPS) optimized OpenCL GPU on Radeon HD 4850 (512x512 input)
  [230 GBps (58 GFLOPS) the paper's GTX 285 implementation using local mem]
-  220 GBps (55 GFLOPS) optimized OpenCL GPU on Radeon HD 4850 (512x512 input)
+  207 GBps (52 GFLOPS) optimized OpenCL GPU on Radeon HD 4850 (500x500 input)
  [159 GBps (40 GFLOPS) the paper's GTX 285 implementation]
-  158 GBps (40 GFLOPS) optimized OpenCL GPU on Radeon HD 4850 (500x500 input)
  [150 GBps (38 GFLOPS) the paper's optimized impl on 2x4-core 2.93 GHz Nehalem]
    86 GBps (22 GFLOPS) naive OpenCL GPU implementation (1D workgroup)
    84 GBps (21 GFLOPS) optimized OpenCL CPU on Core 2 Duo E6400
