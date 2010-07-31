@@ -219,32 +219,30 @@ void print_error(int err) {
 
 struct build_t { double buildTime; double kernelTime; double argTime; double releaseTime; double readTime; };
 
-struct build_t correlate_openCL
-(
- float *correlation, int corr_size,
- const float *obase, const float *omask,
- int sample_size, bool useCPU)
-{
-  double t0 = dtime();
+static cl_kernel kernel;
+static cl_program program;
+static cl_int support;
+static cl_command_queue queue;
+static cl_context context;
 
+void setup_openCL (bool useCPU)
+{
   cl_platform_id platform;
   clGetPlatformIDs( 1, &platform, NULL );
 
   cl_device_id device;
   clGetDeviceIDs( platform, useCPU ? CL_DEVICE_TYPE_CPU : CL_DEVICE_TYPE_GPU, 1, &device, NULL );
 
-  cl_int support;
   clGetDeviceInfo( device, CL_DEVICE_IMAGE_SUPPORT, sizeof(cl_int), &support, NULL );
   support &= !useCPU;
 
-  cl_context context = clCreateContext( NULL, 1, &device, NULL, NULL, NULL );
-  cl_command_queue queue = clCreateCommandQueue( context, device, 0, NULL );
+  context = clCreateContext( NULL, 1, &device, NULL, NULL, NULL );
+  queue = clCreateCommandQueue( context, device, 0, NULL );
 
   const char *program_source_filename = useCPU ? "correlate2.cl" : (support ? "correlate_image.cl" : "correlate.cl");
 
   int err = 0;
 
-  cl_program program;
   size_t len;
   const char* programSource = (char*)readFile(program_source_filename, &len);
   program = clCreateProgramWithSource( context, 1, &programSource, NULL, NULL );
@@ -257,9 +255,26 @@ struct build_t correlate_openCL
     print_error(err);
   }
 
-  cl_kernel kernel = clCreateKernel( program, "correlate", NULL );
+  kernel = clCreateKernel( program, "correlate", NULL );
+}
 
+void release_openCL ()
+{
+  clReleaseKernel( kernel );
+  clReleaseProgram( program );
+  clReleaseCommandQueue( queue );
+  clReleaseContext( context );
+}
+
+struct build_t correlate_openCL
+(
+ float *correlation, int corr_size,
+ const float *obase, const float *omask,
+ int sample_size, bool useCPU)
+{
+  double t0 = dtime();
   double buildTime = dtime()-t0;
+  int err = 0;
 
   int stride = (support ? sample_size : sample_size + 32) + align(sample_size, 8); // pad by 32, align rows on 128 bytes
   int corr_stride = corr_size + align(corr_size, 8); // pad to divisible by 8
@@ -275,8 +290,8 @@ struct build_t correlate_openCL
   float *tmp = (float*)memalign(16, corr_stride*corr_size*sizeof(cl_float));
   memset(tmp, 0, corr_stride*corr_size*sizeof(cl_float));
 
-  t0 = dtime();
 
+  t0 = dtime();
 
   cl_image_format fmt;
   fmt.image_channel_order = CL_RGBA;
@@ -366,19 +381,18 @@ struct build_t correlate_openCL
   double readTime = dtime () - t0;
 
   t0 = dtime();
-
   clReleaseMemObject( base_buf );
   clReleaseMemObject( mask_buf );
   clReleaseMemObject( corr_buf );
 
-  clReleaseCommandQueue( queue );
-  clReleaseKernel( kernel );
-  clReleaseProgram( program );
-  clReleaseContext( context );
   free(base);
   free(mask);
   free(tmp);
   double releaseTime = dtime () - t0;
+
+  t0 = dtime();
+  buildTime += dtime() - t0;
+
   build_t t;
   t.buildTime = buildTime;
   t.kernelTime = kernelTime;
@@ -387,6 +401,7 @@ struct build_t correlate_openCL
   t.releaseTime = releaseTime;
   return t;
 }
+
 
 
 float* makeImage(int ssz, bool initialize)
@@ -452,25 +467,38 @@ int main () {
     printf("%d\t%d\t%.2f", 2*(sz*sz)*16, (sz/2)*(sz/2)*4, gb);
     fflush(stdout);
 
-    // Correlate_openCL runs the kernel 10 times to make
-    // it take the same amount of time as the CPU impls.
-    // This is kinda hacky though, a better benchmark would
-    // be to run all versions over ten different images?
+    // Maybe a better benchmark would be to run all versions over
+    // ten different images?
     int repeats = 1;
     double elapsed = 0.0;
     build_t bt;
+    double buildTime = 0.0;
+    t0 = dtime();
+    setup_openCL(false);
+    buildTime = dtime() - t0;
     for (int j=0; j<repeats; j++) {
       t0 = dtime();
       bt = correlate_openCL(corr3, sz/2, base, mask, sz, false);
-      elapsed += dtime()-bt.buildTime-t0;
+      elapsed += dtime()-t0;
     }
+    t0 = dtime();
+    release_openCL();
+    buildTime += dtime() - t0;
+    bt.buildTime = buildTime;
     printf("\t%.2f\t%.2f\t%.2f\t%.4f\t%.4f\t%.4f", repeats*gb/elapsed, gb/bt.kernelTime, bt.buildTime, bt.argTime, bt.readTime, bt.releaseTime);
     fflush(stdout);
 
     t0 = dtime();
+    setup_openCL(true);
+    buildTime = dtime() - t0;
+    t0 = dtime();
     bt = correlate_openCL(corr2, sz/2, base, mask, sz, true);
-    t1 = dtime()-bt.buildTime;
-    printf("\t%.2f\t%.2f\t%.2f", gb/(t1-t0), gb/bt.kernelTime, bt.buildTime);
+    elapsed = dtime()-t0;
+    t0 = dtime();
+    release_openCL();
+    buildTime += dtime() - t0;
+    bt.buildTime = buildTime;
+    printf("\t%.2f\t%.2f\t%.2f", gb/elapsed, gb/bt.kernelTime, bt.buildTime);
     fflush(stdout);
 
     t0 = dtime();

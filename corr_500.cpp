@@ -1,6 +1,6 @@
 /*
 
-g++ -O3 -msse3 -mfpmath=sse -fopenmp -lOpenCL -lm -o corr corr.cpp
+g++ -O3 -msse3 -mfpmath=sse -fopenmp -lOpenCL -lm -o corr_500 corr_500.cpp
 
 */
 #include <omp.h>
@@ -240,7 +240,7 @@ struct build_t correlate_openCL
   cl_context context = clCreateContext( NULL, 1, &device, NULL, NULL, NULL );
   cl_command_queue queue = clCreateCommandQueue( context, device, 0, NULL );
 
-  const char *program_source_filename = useCPU ? "correlate2.cl" : (support ? "correlate_image.cl" : "correlate.cl");
+  const char *program_source_filename = useCPU ? "correlate2.cl" : (support ? "correlate_image.cl" : "correlate_500.cl");
 
   int err = 0;
 
@@ -261,7 +261,7 @@ struct build_t correlate_openCL
 
   double buildTime = dtime()-t0;
 
-  int stride = (support ? sample_size : sample_size + 8) + align(sample_size, 8); // pad by 32, align rows on 128 bytes
+  int stride = (support ? sample_size : sample_size + 16) + align(sample_size, 8); // pad by 32, align rows on 128 bytes
   int corr_stride = corr_size + align(corr_size, 8); // pad to divisible by 8
   float *base = (float*)memalign(16, stride*stride*16);
   float *mask = (float*)memalign(16, stride*stride*16);
@@ -269,11 +269,14 @@ struct build_t correlate_openCL
     memcpy(&base[y*stride*4], &obase[y*sample_size*4], sample_size*16);
     memset(&base[y*stride*4+sample_size*4], 0, (stride-sample_size)*16);
     memcpy(&mask[y*stride*4], &omask[y*sample_size*4], sample_size*16);
-    memset(&mask[y*stride*4+sample_size*4], 0, (stride-sample_size)*16);
+  }
+  for (int y=sample_size; y<stride; y++) {
+    memset(&base[y*stride*4], 0, stride*16);
+    memset(&mask[y*stride*4], 0, stride*16);
   }
 
   float *tmp = (float*)memalign(16, corr_stride*corr_stride*sizeof(cl_float));
-  memset(tmp, 0, corr_stride*corr_size*sizeof(cl_float));
+  memset(tmp, 0, corr_stride*corr_stride*sizeof(cl_float));
 
   t0 = dtime();
 
@@ -371,14 +374,18 @@ struct build_t correlate_openCL
   clReleaseMemObject( mask_buf );
   clReleaseMemObject( corr_buf );
 
-  clReleaseCommandQueue( queue );
-  clReleaseKernel( kernel );
-  clReleaseProgram( program );
-  clReleaseContext( context );
   free(base);
   free(mask);
   free(tmp);
   double releaseTime = dtime () - t0;
+
+  t0 = dtime();
+  clReleaseCommandQueue( queue );
+  clReleaseKernel( kernel );
+  clReleaseProgram( program );
+  clReleaseContext( context );
+  buildTime += dtime() - t0;
+
   build_t t;
   t.buildTime = buildTime;
   t.kernelTime = kernelTime;

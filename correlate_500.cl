@@ -2,7 +2,7 @@
 
 #define W 1
 #define SUMLEN (W*8)
-#define STRIDE 8
+#define STRIDE 16
 #define CACHE (SUMLEN+STRIDE)
 
 __attribute__((reqd_work_group_size(64,1,1)))
