@@ -1,9 +1,6 @@
 #version 120
 #extension GL_ARB_texture_rectangle : enable
 
-#define XBSZ 2
-#define YBSZ 2
-
 uniform sampler2DRect base;
 uniform sampler2DRect mask;
 uniform float sample_size;
@@ -16,17 +13,18 @@ void main()
   float offset_x = floor(texCoord0.x);
   float last_y = sample_size-offset_y;
   float last_x = sample_size-offset_x;
-  for (float yb=0; yb < last_y; yb += YBSZ) {
-    for (float xb=0; xb < last_x; xb += XBSZ) {
-      for (float y=0; y < YBSZ; y++) {
-        float yby = yb + y;
-        float ok = clamp(last_y - yby, 0.0, 1.0);
-        for (float x=0; x < XBSZ; x++) {
-          float xbx = xb + x;
-          ok *= clamp(last_x - xbx, 0.0, 1.0);
-          sum += ok * texture2DRect(mask, vec2(xbx,yby)) * texture2DRect(base, vec2(xbx+offset_x, yby+offset_y));
-        }
-      }
+  for (float y=0; y < last_y; y+=2) {
+    float yf = clamp(last_y-y-1, 0.0, 1.0);
+    for (float x=0; x < last_x; x+=2) {
+      float xf = clamp(last_x-x-1, 0.0, 1.0);
+      sum += texture2DRect(mask, vec2(x,y)) *
+             texture2DRect(base, vec2(x+offset_x, y+offset_y));
+      sum += xf * texture2DRect(mask, vec2(x+1,y)) *
+                  texture2DRect(base, vec2(x+1+offset_x, y+offset_y));
+      sum += yf * texture2DRect(mask, vec2(x,y+1)) *
+                  texture2DRect(base, vec2(x+offset_x, y+1+offset_y));
+      sum += xf * yf * texture2DRect(mask, vec2(x+1,y+1)) *
+                       texture2DRect(base, vec2(x+1+offset_x, y+1+offset_y));
     }
   }
   gl_FragColor.x = sum.r + sum.g + sum.b + sum.a;

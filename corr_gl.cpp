@@ -274,7 +274,6 @@ double correlate_openGL
   if (debug) {
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glDrawArrays(GL_TRIANGLES, 0, 6);
-    glutSwapBuffers();
   }
 
   if (debug) printf("deletetex\n");
@@ -331,7 +330,7 @@ int main (int argc, char *argv[]) {
   int csz = ssz/2;
 
   glutInit(&argc, argv);
-  glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGBA);
+  glutInitDisplayMode(GLUT_SINGLE | GLUT_RGBA);
   glutInitWindowPosition(100, 100);
   glutInitWindowSize(ssz/2, ssz/2);
   int win = glutCreateWindow("GPU");

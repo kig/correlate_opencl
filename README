@@ -22,7 +22,7 @@ Current results (8 FLOPS per 32 bytes memory read):
   workload (and a 0.7 sec one-time overhead to do a 1 sec operation would
   be a bit skewy). The OpenCL results do include the data write and read times.
 
-  337 GBps (84 GFLOPS) 2x2 blocked GLSL on Radeon HD 4850 (500x500 input)
+  339 GBps (85 GFLOPS) 2x2 blocked GLSL on Radeon HD 4850 (500x500 input)
   278 GBps (70 GFLOPS) optimized OpenCL GPU on Radeon HD 4850 (640x640 input)
  [276 GBps (69 GFLOPS) the paper's optimized impl on 8-core 3 GHz Power7]
   259 GBps (65 GFLOPS) optimized OpenCL GPU on Radeon HD 4850 (512x512 input)
