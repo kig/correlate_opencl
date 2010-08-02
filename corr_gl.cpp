@@ -122,6 +122,8 @@ void printShaderInfoLog(GLuint obj) {
     }
 }
 
+GLint GL_program = -1;
+
 double correlate_openGL
 (
  float *correlation, int corr_size,
@@ -141,53 +143,51 @@ double correlate_openGL
 
   t0 = dtime();
 
-  GLuint v = glCreateShader(GL_VERTEX_SHADER);
-  GLuint f = glCreateShader(GL_FRAGMENT_SHADER);
-  size_t len;
-  GLchar *vs = (GLchar*)readFile("correlate.vs", &len);
-  GLchar *fs = (GLchar*)readFile("correlate.fs", &len);
-  if (debug) printf("read shaders\n");
-  const GLchar *vv = vs, *ff = fs;
-  glShaderSource(v, 1, &vv, NULL);
-  glCompileShader(v);
-  if (debug) checkGLErrors("vs");
-  if (debug) printShaderInfoLog(v);
+  if (GL_program == -1) {
+    GLuint v = glCreateShader(GL_VERTEX_SHADER);
+    GLuint f = glCreateShader(GL_FRAGMENT_SHADER);
+    size_t len;
+    GLchar *vs = (GLchar*)readFile("correlate.vs", &len);
+    GLchar *fs = (GLchar*)readFile("correlate.fs", &len);
+    if (debug) printf("read shaders\n");
+    const GLchar *vv = vs, *ff = fs;
+    glShaderSource(v, 1, &vv, NULL);
+    glCompileShader(v);
+    if (debug) checkGLErrors("vs");
+    if (debug) printShaderInfoLog(v);
 
-  glShaderSource(f, 1, &ff, NULL);
-  glCompileShader(f);
-  if (debug) checkGLErrors("fs");
-  if (debug) printShaderInfoLog(f);
+    glShaderSource(f, 1, &ff, NULL);
+    glCompileShader(f);
+    if (debug) checkGLErrors("fs");
+    if (debug) printShaderInfoLog(f);
 
-  free(vs);
-  free(fs);
-  if (debug) printf("created shaders\n");
-  GLuint p = glCreateProgram();
-  glAttachShader(p, v);
-  glAttachShader(p, f);
-  glLinkProgram(p);
-  if (debug) checkGLErrors("linkProgram");
-  if (debug) printProgramInfoLog(p);
+    free(vs);
+    free(fs);
+    if (debug) printf("created shaders\n");
+    GLuint p = glCreateProgram();
+    glAttachShader(p, v);
+    glAttachShader(p, f);
+    glLinkProgram(p);
+    if (debug) checkGLErrors("linkProgram");
+    if (debug) printProgramInfoLog(p);
 
-  glUseProgram(p);
-  if (debug) printf("program ok\n");
+    glUseProgram(p);
+    if (debug) printf("program ok\n");
 
-  if (debug) checkGLErrors("useProgram");
+    if (debug) checkGLErrors("useProgram");
+    GL_program = p;
+  }
 
   buildTime = dtime() - t0;
-
 
   glGenFramebuffers(1, &fbo);
   if (debug) printf("genfbo %d!\n", fbo);
   glBindFramebuffer(GL_FRAMEBUFFER, fbo);
   if (debug) printf("fbo!\n");
 
+
   glBindTexture(GL_TEXTURE_RECTANGLE_ARB, tex[0]);
   glTexImage2D(GL_TEXTURE_RECTANGLE_ARB, 0, GL_LUMINANCE32F_ARB, corr_size, corr_size, 0, GL_LUMINANCE, GL_FLOAT, NULL);
-  glTexParameteri(GL_TEXTURE_RECTANGLE_ARB, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-  glTexParameteri(GL_TEXTURE_RECTANGLE_ARB, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-  glTexParameteri(GL_TEXTURE_RECTANGLE_ARB, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-  glTexParameteri(GL_TEXTURE_RECTANGLE_ARB, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-
   glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_RECTANGLE_ARB, tex[0], 0);
 
   if (debug) printf("tex0\n");
@@ -197,8 +197,8 @@ double correlate_openGL
   glTexImage2D(GL_TEXTURE_RECTANGLE_ARB, 0, GL_RGBA32F_ARB, sample_size, sample_size, 0, GL_RGBA, GL_FLOAT, base);
   glTexParameteri(GL_TEXTURE_RECTANGLE_ARB, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
   glTexParameteri(GL_TEXTURE_RECTANGLE_ARB, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-  glTexParameteri(GL_TEXTURE_RECTANGLE_ARB, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-  glTexParameteri(GL_TEXTURE_RECTANGLE_ARB, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+  glTexParameteri(GL_TEXTURE_RECTANGLE_ARB, GL_TEXTURE_WRAP_S, GL_CLAMP);
+  glTexParameteri(GL_TEXTURE_RECTANGLE_ARB, GL_TEXTURE_WRAP_T, GL_CLAMP);
 
   if (debug) printf("tex1\n");
 
@@ -207,14 +207,14 @@ double correlate_openGL
   glTexImage2D(GL_TEXTURE_RECTANGLE_ARB, 0, GL_RGBA32F_ARB, sample_size, sample_size, 0, GL_RGBA, GL_FLOAT, mask);
   glTexParameteri(GL_TEXTURE_RECTANGLE_ARB, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
   glTexParameteri(GL_TEXTURE_RECTANGLE_ARB, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-  glTexParameteri(GL_TEXTURE_RECTANGLE_ARB, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-  glTexParameteri(GL_TEXTURE_RECTANGLE_ARB, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+  glTexParameteri(GL_TEXTURE_RECTANGLE_ARB, GL_TEXTURE_WRAP_S, GL_CLAMP);
+  glTexParameteri(GL_TEXTURE_RECTANGLE_ARB, GL_TEXTURE_WRAP_T, GL_CLAMP);
 
   glActiveTexture(GL_TEXTURE0);
 
   if (debug) printf("tex2\n");
 
-  checkFramebufferStatus();
+  if (debug) checkFramebufferStatus();
 
   if (debug) checkGLErrors("fbotex");
 
@@ -238,14 +238,14 @@ double correlate_openGL
   };
 
   GLuint verta,texa;
-  verta = glGetAttribLocation(p, "Vertex");
-  texa = glGetAttribLocation(p, "TexCoord");
+  verta = glGetAttribLocation(GL_program, "Vertex");
+  texa = glGetAttribLocation(GL_program, "TexCoord");
 
   if (debug) printf("uniforms\n");
   GLuint b_i, m_i, s_i;
-  b_i = glGetUniformLocation(p, "base");
-  m_i = glGetUniformLocation(p, "mask");
-  s_i = glGetUniformLocation(p, "sample_size");
+  b_i = glGetUniformLocation(GL_program, "base");
+  m_i = glGetUniformLocation(GL_program, "mask");
+  s_i = glGetUniformLocation(GL_program, "sample_size");
   if (debug) printf("%d, %d, %d\n", b_i, m_i, s_i);
   glUniform1i(b_i, 1);
   glUniform1i(m_i, 2);
