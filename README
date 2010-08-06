@@ -1,7 +1,7 @@
 An implementation of the algorithm used in the paper 
 "Believe it or Not! Multicore CPUs can Match GPUs for FLOP-intensive
 Applications!" (http://bit.ly/a1xvZB) for comparing CPU and GPU 
-performance in an L1 read benchmark.
+performance on a cache-friendly image correlation algorithm.
 
 And it was a good excuse to learn OpenCL.
 
