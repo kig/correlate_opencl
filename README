@@ -44,10 +44,12 @@ Compiling and running:
   export ATISTREAMSDKROOT=path_to_ati_stream_sdk
   export LD_LIBRARY_PATH=$ATISTREAMSDKROOT/lib/x86:$LD_LIBRARY_PATH
 
-  # see the comment at the top of each .cpp for the compiling command
-  # e.g. for corr.cpp
-  g++ -O3 -msse3 -mfpmath=sse -fopenmp -lOpenCL -lm -o corr corr.cpp
+  ./build.sh
   ./corr
+  ./corr_500
+  ./corr_gl
+  ./corr_naive
+  ./memsum
 
   ocamlopt -o ocorr corr.ml
   time ./ocorr # divide time by 1.21 to get GBps
