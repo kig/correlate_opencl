@@ -1,6 +1,9 @@
 /*
 g++ -msse3 -mfpmath=sse
 
+LICENSE: MIT license
+2010 (c) Ilmari Heikkinen <ilmari.heikkinen@gmail.com>
+
 SSE3 FP vector math structs for C++ with operator overloading.
 
 Uses SSE intrinsics, YMMV.
@@ -58,13 +61,17 @@ float4 API:
     v.wzyx() = (v.w, v.z, v.y, v.x)
     etc.
 
-double2 and double4 have the same methods as float4,
-except that they don't have recip and rsqrt and
-double2 has only two-element swizzles.
+double2 and double4 have the same methods as float4, with double2 having
+API using two elements where float4 uses four (e.g. double2 swizzles are
+v.xy() and v.yx() and such).
 
-double4 swizzles and shuffles are implemented by casting
+The double2 and double4 recip() and rsqrt() -methods are implemented in
+software (1.0 / this, sqrt().recip()), unlike float4 which uses the SSE
+_mm_rcp_ps and _mm_rsqrt_ps -ops.
+
+The double4 swizzles and shuffles are implemented by casting
 the struct to a double pointer and doing indexed reads,
-so it's pretty slow.
+so they're pretty slow.
 
 */
 
@@ -470,8 +477,14 @@ struct double2
   double dot (const double2 &v) const
   { return (*this * v).sum(); }
 
+  double2 recip () const
+  { return double2(1.0) / *this; }
+
   double2 sqrt () const
   { return double2(_mm_sqrt_pd(xmm)); }
+
+  double2 rsqrt () const
+  { return sqrt().recip(); }
 
   double2 min (const double2 &v) const
   { return double2(_mm_min_pd(xmm, v.xmm)); }
@@ -552,8 +565,14 @@ struct double4
   double dot (const double4 &v) const
   { return (*this * v).sum(); }
 
+  double4 recip () const
+  { return double4(1.0) / *this; }
+
   double4 sqrt () const
   { return double4(_mm_sqrt_pd(xmm0), _mm_sqrt_pd(xmm1)); }
+
+  double4 rsqrt () const
+  { return sqrt().recip(); }
 
   double4 min (const double4 &v) const
   { return double4(_mm_min_pd(xmm0, v.xmm0), _mm_min_pd(xmm1, v.xmm1)); }
