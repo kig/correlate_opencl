@@ -99,7 +99,7 @@ void correlate_optimized
     memcpy(&mask[y*stride], &omask[y*sample_size*4], sample_size*sizeof(float4));
     memset(&mask[y*stride+sample_size], 0, (stride-sample_size)*sizeof(float4));
   }
-  #pragma omp parallel for
+  #pragma omp parallel for num_threads(32)
   for (int offset_y=0; offset_y < corr_size; offset_y++) {
     for (int rows=0; rows < sample_size-offset_y; rows++) {
       for (int offset_x=0; offset_x < corr_size; offset_x+=4) {
@@ -134,7 +134,7 @@ void correlate_optimized_double
     memcpy(&mask[y*stride], &omask[y*sample_size*4], sample_size*sizeof(double4));
     memset(&mask[y*stride+sample_size], 0, (stride-sample_size)*sizeof(double4));
   }
-  #pragma omp parallel for
+  #pragma omp parallel for num_threads(32)
   for (int offset_y=0; offset_y < corr_size; offset_y++) {
     for (int rows=0; rows < sample_size-offset_y; rows++) {
       for (int offset_x=0; offset_x < corr_size; offset_x+=2) {
