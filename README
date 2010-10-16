@@ -11,6 +11,8 @@ Hardware tested:
     in ATI's OpenCL drivers, resulting in most reads coming from main memory
   Core 2 Duo E6400, 6.4 GBps memory bandwidth, 18 GBps L2, 90.5 GBps L1,
     37.5 mul-add SP GFLOPS, hobbled by lack of performance
+  Athlon II X4 640, 15 GBps memory bandwidth, 50 GBps L2, 250 GBps L1,
+    96 mul-add SP GFLOPS, hobbled by small cache (not a problem here though)
 
 Current results (8 FLOPS per 32 bytes memory read):
   The results from the paper are on 500x500 input images. The paper reported 
@@ -27,18 +29,21 @@ Current results (8 FLOPS per 32 bytes memory read):
  [276 GBps (69 GFLOPS) the paper's optimized impl on 8-core 3 GHz Power7]
   259 GBps (65 GFLOPS) optimized OpenCL GPU on Radeon HD 4850 (512x512 input)
   243 GBps (61 GFLOPS) optimized OpenCL GPU on Radeon HD 4850 (500x500 input)
+  240 GBps (60 GFLOPS) optimized OpenCL CPU on Athlon II X4 640
  [230 GBps (58 GFLOPS) the paper's GTX 285 implementation using local mem]
   204 GBps (51 GFLOPS) naive GLSL implementation on Radeon HD 4850
  [159 GBps (40 GFLOPS) the paper's GTX 285 implementation]
  [150 GBps (38 GFLOPS) the paper's optimized impl on 2x4-core 2.93 GHz Nehalem]
+  103 GBps (26 GFLOPS) manually optimized OpenMP SSE on Athlon II X4
    86 GBps (22 GFLOPS) naive OpenCL GPU implementation (1D workgroup)
    84 GBps (21 GFLOPS) optimized OpenCL CPU on Core 2 Duo E6400
-   45 GBps (11 GFLOPS) manually optimized OpenMP SSE implementation
+   45 GBps (11 GFLOPS) manually optimized OpenMP SSE implementation on C2D
    25 GBps (6 GFLOPS) naive OpenCL GPU implementation (2D workgroup)
-    5 GBps (1 GFLOPS) naive OpenMP SSE implementation
-    5 GBps (1 GFLOPS) naive scalar C implementation
-    1.1 GBps (0.3 GFLOPS) naive OCaml implementation
-    0.03 GBps (0.008 GFLOPS) naive pure-Python implementation
+   13 GBps (3 GFLOPS) naive OpenMP SSE implementation on Athlon II X4
+    5 GBps (1 GFLOPS) naive OpenMP SSE implementation on C2D
+    5 GBps (1 GFLOPS) naive scalar C implementation on C2D
+    1.1 GBps (0.3 GFLOPS) naive OCaml implementation on C2D
+    0.03 GBps (0.008 GFLOPS) naive pure-Python implementation on C2D
 
 Compiling and running:
   export ATISTREAMSDKROOT=path_to_ati_stream_sdk
