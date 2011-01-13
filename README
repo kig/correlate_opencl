@@ -13,6 +13,7 @@ Hardware tested:
     37.5 mul-add SP GFLOPS, hobbled by lack of performance
   Athlon II X4 640, 15 GBps memory bandwidth, 50 GBps L2, 250 GBps L1,
     96 mul-add SP GFLOPS, hobbled by small cache (not a problem here though)
+    Interesting CPU result differences between the 32-bit and 64-bit versions.
 
 Current results (8 FLOPS per 32 bytes memory read):
   The results from the paper are on 500x500 input images. The paper reported 
@@ -29,12 +30,14 @@ Current results (8 FLOPS per 32 bytes memory read):
  [276 GBps (69 GFLOPS) the paper's optimized impl on 8-core 3 GHz Power7]
   259 GBps (65 GFLOPS) optimized OpenCL GPU on Radeon HD 4850 (512x512 input)
   243 GBps (61 GFLOPS) optimized OpenCL GPU on Radeon HD 4850 (500x500 input)
-  240 GBps (60 GFLOPS) optimized OpenCL CPU on Athlon II X4 640
+  240 GBps (60 GFLOPS) optimized OpenCL CPU on Athlon II X4 640 (32-bit)
  [230 GBps (58 GFLOPS) the paper's GTX 285 implementation using local mem]
   204 GBps (51 GFLOPS) naive GLSL implementation on Radeon HD 4850
+  201 GBps (50 GFLOPS) manually optimized OpenMP SSE on Athlon II X4 640 (64-bit)
  [159 GBps (40 GFLOPS) the paper's GTX 285 implementation]
  [150 GBps (38 GFLOPS) the paper's optimized impl on 2x4-core 2.93 GHz Nehalem]
-  103 GBps (26 GFLOPS) manually optimized OpenMP SSE on Athlon II X4
+  125 GBps (31 GFLOPS) optimized OpenMP SSE on Athlon II X4 (64-bit)
+  103 GBps (26 GFLOPS) manually optimized OpenMP SSE on Athlon II X4 (32-bit)
    86 GBps (22 GFLOPS) naive OpenCL GPU implementation (1D workgroup)
    84 GBps (21 GFLOPS) optimized OpenCL CPU on Core 2 Duo E6400
    45 GBps (11 GFLOPS) manually optimized OpenMP SSE implementation on C2D
